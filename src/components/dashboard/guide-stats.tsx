@@ -607,10 +607,26 @@ export function GuideStats({
                               <p className="text-gray-900 font-medium">
                                 {item.question}
                               </p>
-                              <p className="text-sm text-gray-500 mt-1">
-                                Your answer: {item.user_choice}.{' '}
-                                {item.user_answer_text}
-                              </p>
+                              <div className="mt-2">
+                                <p className="text-sm text-red-600 font-medium">
+                                  Your answer:{' '}
+                                  {item.question_type !== 'short_answer' &&
+                                    item.user_choice &&
+                                    `${item.user_choice}. `}
+                                  <span className="text-gray-700">
+                                    {item.user_answer_text}
+                                  </span>
+                                </p>
+                                <p className="text-sm text-green-600 font-medium mt-1">
+                                  Correct answer:{' '}
+                                  {item.question_type !== 'short_answer' &&
+                                    item.correct_answer &&
+                                    `${item.correct_answer}. `}
+                                  <span className="text-gray-700">
+                                    {item.correct_answer_text}
+                                  </span>
+                                </p>
+                              </div>
                             </div>
                           </div>
                         </div>

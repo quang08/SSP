@@ -117,6 +117,8 @@ export interface WrongQuestion {
   user_answer_text: string;
   correct_answer: string;
   correct_answer_text: string;
+  wrong_count?: number;
+  question_type?: 'multiple_choice' | 'short_answer';
 }
 
 export interface WeeklyProgress {

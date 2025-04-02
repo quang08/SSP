@@ -106,6 +106,28 @@ export const initSessionActivity = () => {
     }
   });
 
+  // Add beforeunload event to catch when users close tabs/browsers
+  window.addEventListener('beforeunload', async (event) => {
+    try {
+      // Get session ID from localStorage
+      const sessionId = localStorage.getItem('session_id');
+      if (!sessionId) return;
+
+      // Use the 'fetch' API with keepalive option to ensure the request completes
+      // even when the page is being unloaded
+      navigator.sendBeacon(
+        `${ENDPOINTS.endSession}?sessionId=${sessionId}`,
+        JSON.stringify({ session_id: sessionId })
+      );
+
+      // Clear session data from localStorage
+      localStorage.removeItem('session_id');
+      isSessionActive = false;
+    } catch (error) {
+      console.error('Error ending session during unload:', error);
+    }
+  });
+
   // Initial setup of the timer
   resetInactivityTimer();
 
@@ -121,6 +143,8 @@ export const initSessionActivity = () => {
     activityEvents.forEach((event) => {
       window.removeEventListener(event, resetInactivityTimer);
     });
+
+    window.removeEventListener('beforeunload', () => {});
   };
 };
 
