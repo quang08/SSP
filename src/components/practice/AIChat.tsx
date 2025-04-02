@@ -664,7 +664,7 @@ export const AIChat: React.FC<AIChatProps> = ({
             {remainingQuestions <= 0 && (
               <div className="text-amber-500 flex items-center gap-1 text-sm mt-1">
                 <AlertCircle className="h-3 w-3" />
-                You've used all available questions for this session.
+                You have used all available questions for this session.
               </div>
             )}
           </div>
