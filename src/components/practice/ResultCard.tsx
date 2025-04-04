@@ -199,8 +199,6 @@ export const ResultCard = ({
   feedback,
   confidenceLevel,
 }: ResultCardProps) => {
-  const [showChat, setShowChat] = useState(false);
-
   // Determine which answer to display based on question type
   const displayUserAnswer =
     questionType === 'short_answer'
@@ -354,28 +352,11 @@ export const ResultCard = ({
               )}
             </div>
 
-            <button
-              onClick={() => setShowChat(!showChat)}
-              className="mt-6 inline-flex items-center gap-2 px-4 py-2 bg-[var(--color-primary)] text-white rounded-lg hover:bg-[var(--color-primary-hover)]"
-            >
-              {showChat ? (
-                <>
-                  <X className="w-5 h-5" />
-                  Close Chat
-                </>
-              ) : (
-                <>
-                  <MessageCircle className="w-5 h-5" />
-                  Chat with AI
-                </>
-              )}
-            </button>
+            <div className="mt-6">
+              <AIChat userId={userId} testId={testId} questionId={questionId} />
+            </div>
           </div>
         </div>
-
-        {showChat && (
-          <AIChat userId={userId} testId={testId} questionId={questionId} />
-        )}
       </div>
     </div>
   );
