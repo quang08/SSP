@@ -139,3 +139,29 @@ export interface DashboardGuide {
   progress: number;
   type: 'regular' | 'slides';
 }
+
+// Interface for the consolidated data response from the new API endpoint
+export interface ConsolidatedGuidesResponse {
+  regular_guides: {
+    study_guide_id: string;
+    title: string;
+  }[];
+  slides_guides: SlidesGuideListItem[];
+  guide_analytics: any[]; // Using 'any' for flexibility with the analytics data structure
+  regular_guide_tests: {
+    [title: string]: PracticeTest[];
+  };
+  slides_guide_tests: {
+    [guide_id: string]: SlidePracticeTest[];
+  };
+  completed_tests: {
+    test_id: string;
+    study_guide_id: string;
+    score: number;
+    accuracy: number;
+    submitted_at: string;
+  }[];
+  guide_progress: {
+    [guide_id_or_title: string]: number;
+  };
+}

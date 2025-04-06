@@ -28,6 +28,7 @@ import {
   ProgressMap,
   SlidesGuideListItem,
   SlidesGuideListResponse,
+  ConsolidatedGuidesResponse,
 } from '@/interfaces/topic';
 import { CompletedTest, TestResultsResponse } from '@/interfaces/test';
 import { initSessionActivity } from '@/utils/session-management';
@@ -97,173 +98,55 @@ const PracticePage: React.FC = () => {
         const authUserId = await getUserId();
         if (!authUserId) throw new Error('User authentication required');
 
-        const response = await fetchWithAuth(ENDPOINTS.studyGuides);
-        if (!response.ok) throw new Error('Failed to fetch study guides');
+        // Use the new consolidated endpoint instead of multiple API calls
+        const response = await fetchWithAuth(
+          ENDPOINTS.allGuidesWithTests(authUserId)
+        );
+        if (!response.ok) throw new Error('Failed to fetch study guides data');
 
-        const data = await response.json();
-        const guides: StudyGuide[] =
-          data.study_guides.map(
-            (guide: { study_guide_id: string; title: string }) => ({
-              title: guide.title,
-              id: guide.study_guide_id,
-              practice_tests: [],
-            })
-          ) || [];
+        const consolidatedData: ConsolidatedGuidesResponse =
+          await response.json();
+
+        // Process regular guides
+        const guides: StudyGuide[] = consolidatedData.regular_guides.map(
+          (guide) => ({
+            title: guide.title,
+            id: guide.study_guide_id,
+            practice_tests:
+              consolidatedData.regular_guide_tests[guide.title] || [],
+          })
+        );
         setStudyGuides(guides);
 
-        // First fetch completed tests data
-        const completedTestsResponse = await fetchWithAuth(
-          ENDPOINTS.testResults(authUserId)
-        );
+        // Process slides guides
+        setSlidesGuides(consolidatedData.slides_guides);
 
-        let completedTestsMap = new Set<string>();
-        let completedTests: CompletedTest[] = [];
-
-        if (!completedTestsResponse.ok) {
-          setProgressMap({});
-          setSlidesProgressMap({});
-        } else {
-          const completedTestsData: TestResultsResponse =
-            await completedTestsResponse.json();
-          completedTests = completedTestsData.test_results || [];
-          completedTestsMap = new Set(
-            completedTests.map((test: CompletedTest) => test.test_id)
-          );
-        }
-
-        // Then fetch slides-based study guides and calculate their progress
-        const slidesResponse = await fetchWithAuth(ENDPOINTS.slidesGuides);
-        const slidesGuidesFromApi: SlidesGuideListItem[] = [];
-
-        if (slidesResponse.ok) {
-          const slidesData: SlidesGuideListResponse =
-            await slidesResponse.json();
-          if (slidesData.study_guides && slidesData.study_guides.length > 0) {
-            slidesGuidesFromApi.push(...slidesData.study_guides);
-          }
-        }
-
-        // Fetch guide analytics to know which guides have stats
-        const analyticsResponse = await fetchWithAuth(
-          ENDPOINTS.allGuideAnalytics(authUserId)
-        );
+        // Set guide analytics
         const analyticsSet = new Set<string>();
-        const slidesGuidesFromAnalytics: SlidesGuideListItem[] = [];
-        let analyticsData: { study_guides?: AnalyticsGuideData[] } = {};
-
-        if (analyticsResponse.ok) {
-          analyticsData = await analyticsResponse.json();
-          if (
-            analyticsData.study_guides &&
-            analyticsData.study_guides.length > 0
-          ) {
-            analyticsData.study_guides.forEach((guide: AnalyticsGuideData) => {
+        if (consolidatedData.guide_analytics) {
+          consolidatedData.guide_analytics.forEach((guide) => {
+            if (guide.study_guide_id) {
               analyticsSet.add(guide.study_guide_id);
-
-              // If this is a slides guide, and we don't already have it from the slides endpoint
-              if (
-                guide.guide_type === 'slides' &&
-                !slidesGuidesFromApi.some(
-                  (sg) => sg._id === guide.study_guide_id
-                )
-              ) {
-                console.log(
-                  `Adding slides guide from analytics: ${guide.study_guide_id} - ${guide.study_guide_title}`
-                );
-
-                // Create a slides guide object from the analytics data
-                slidesGuidesFromAnalytics.push({
-                  _id: guide.study_guide_id,
-                  title:
-                    guide.study_guide_title ||
-                    `Slides Guide ${guide.study_guide_id}`,
-                  topics: [], // We don't have topics data, but it's not used in the renderGuideCard function
-                  fromAnalytics: true,
-                });
-              }
-            });
-          }
-          setGuidesWithAnalytics(analyticsSet);
-          console.log('Guides with analytics:', Array.from(analyticsSet));
+            }
+          });
         }
+        setGuidesWithAnalytics(analyticsSet);
 
-        // Combine slides guides from both sources
-        const allSlidesGuides = [
-          ...slidesGuidesFromApi,
-          ...slidesGuidesFromAnalytics,
-        ];
-        setSlidesGuides(allSlidesGuides);
+        // Set progress for each guide type
+        const regularProgressData: ProgressMap = {};
+        guides.forEach((guide) => {
+          regularProgressData[guide.title] =
+            consolidatedData.guide_progress[guide.title] || 0;
+        });
+        setProgressMap(regularProgressData);
 
-        // Calculate progress for slides study guides
+        // Set progress for slides guides
         const slidesProgressData: ProgressMap = {};
-        await Promise.all(
-          allSlidesGuides.map(async (guide) => {
-            try {
-              // First try to get progress from API
-              const slideTestsResponse = await fetchWithAuth(
-                ENDPOINTS.slidesPracticeTests(guide._id)
-              );
-
-              if (slideTestsResponse.ok) {
-                const slideTestsData = await slideTestsResponse.json();
-
-                if (
-                  slideTestsData.practice_tests &&
-                  slideTestsData.practice_tests.length > 0
-                ) {
-                  const totalTests = slideTestsData.practice_tests.length;
-                  const guideId = guide._id;
-
-                  // Get completed tests for this guide
-                  const guideCompletedTests = completedTests.filter(
-                    (test) => test.study_guide_id === guideId
-                  ).length;
-
-                  // Calculate progress percentage
-                  slidesProgressData[guide._id] =
-                    totalTests > 0
-                      ? (guideCompletedTests / totalTests) * 100
-                      : 0;
-                }
-              } else if ((guide as SlidesGuideListItem).fromAnalytics) {
-                // For guides from analytics without test data, use analytics info to show some progress
-                const guideId = guide._id;
-                const guideAnalytics = analyticsData.study_guides?.find(
-                  (g: AnalyticsGuideData) => g.study_guide_id === guideId
-                );
-
-                if (guideAnalytics) {
-                  slidesProgressData[guide._id] =
-                    guideAnalytics.average_accuracy || 0;
-                }
-              }
-            } catch (error) {
-              slidesProgressData[guide._id] = 0;
-            }
-          })
-        );
-
+        consolidatedData.slides_guides.forEach((guide) => {
+          slidesProgressData[guide._id] =
+            consolidatedData.guide_progress[guide._id] || 0;
+        });
         setSlidesProgressMap(slidesProgressData);
-
-        // Calculate progress for regular study guides
-        const progressData: ProgressMap = {};
-        await Promise.all(
-          guides.map(async (guide: StudyGuide) => {
-            const testResponse = await fetchWithAuth(
-              ENDPOINTS.practiceTests(guide.title)
-            );
-            if (testResponse.ok) {
-              const testData: StudyGuide = await testResponse.json();
-              const totalTests = testData.practice_tests.length;
-              const completedTests = testData.practice_tests.filter((test) =>
-                completedTestsMap.has(test.practice_test_id)
-              ).length;
-              progressData[guide.title] =
-                totalTests > 0 ? (completedTests / totalTests) * 100 : 0;
-            }
-          })
-        );
-        setProgressMap(progressData);
 
         // Clear the timeout once fetching is complete
         clearTimeout(fetchTimeout);

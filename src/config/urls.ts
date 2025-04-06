@@ -11,6 +11,8 @@ export const ENDPOINTS = {
   slidesPracticeTests: (guideId: string) =>
     `${API_URL}/api/study-guide/practice/guide/slides/${encodeURIComponent(guideId)}`,
   generateSlidesPracticeTests: `${API_URL}/api/study-guide/slides/generate-practices`,
+  allGuidesWithTests: (userId: string) =>
+    `${API_URL}/api/study-guide/all-with-tests/${encodeURIComponent(userId)}`,
   studyHours: (userId: string) =>
     `${API_URL}/api/user/study-hours/${encodeURIComponent(userId)}`,
   enhancedStudyHours: (
