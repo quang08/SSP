@@ -108,6 +108,12 @@ export interface QuizResults {
   status: string;
   questions: QuizQuestion[];
   time_taken: number;
+  mastered?: boolean;
+  attempt_number?: number;
+  attempts_remaining?: number;
+  needs_remediation?: boolean;
+  remediation_viewed?: boolean;
+  can_retry?: boolean;
 }
 
 export interface WrongQuestion {

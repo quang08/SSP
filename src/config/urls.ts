@@ -120,4 +120,33 @@ export const ENDPOINTS = {
     practiceTestId
       ? `${API_URL}/api/adaptive-tests/submissions/${encodeURIComponent(userId)}?practice_test_id=${encodeURIComponent(practiceTestId)}`
       : `${API_URL}/api/adaptive-tests/submissions/${encodeURIComponent(userId)}`,
+
+  // Bloom's Mastery Model endpoints
+  testStatus: (
+    userId: string,
+    studyGuideId: string,
+    topicId: string,
+    testId: string
+  ) =>
+    `${API_URL}/api/mastery/test-status/${encodeURIComponent(userId)}/${encodeURIComponent(studyGuideId)}/${encodeURIComponent(topicId)}/${encodeURIComponent(testId)}`,
+  topicStatus: (userId: string, studyGuideId: string, topicId: string) =>
+    `${API_URL}/api/mastery/topic-status/${encodeURIComponent(userId)}/${encodeURIComponent(studyGuideId)}/${encodeURIComponent(topicId)}`,
+  userProgress: (userId: string, studyGuideId?: string) =>
+    studyGuideId
+      ? `${API_URL}/api/mastery/user-progress/${encodeURIComponent(userId)}?study_guide_id=${encodeURIComponent(studyGuideId)}`
+      : `${API_URL}/api/mastery/user-progress/${encodeURIComponent(userId)}`,
+  masteryThresholds: `${API_URL}/api/mastery/thresholds`,
+  updateMasteryStatus: (
+    userId: string,
+    studyGuideId: string,
+    topicId: string,
+    submissionId: string
+  ) =>
+    `${API_URL}/api/mastery/update-mastery-status/${encodeURIComponent(userId)}/${encodeURIComponent(studyGuideId)}/${encodeURIComponent(topicId)}/${encodeURIComponent(submissionId)}`,
+
+  // Add new endpoints for Bloom's retry and remediation features
+  retryTest: `${API_URL}/api/mastery/retry-test`,
+  getRemediation: `${API_URL}/api/mastery/get-remediation`,
+  markRemediationViewed: (remediationId: string) =>
+    `${API_URL}/api/mastery/mark-remediation-viewed/${remediationId}`,
 };

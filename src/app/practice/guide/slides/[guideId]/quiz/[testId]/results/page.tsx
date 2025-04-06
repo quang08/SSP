@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { fetchWithAuth } from '@/app/auth/fetchWithAuth';
 import { Header } from '@/components/layout/header';
 import Link from 'next/link';
@@ -19,11 +19,16 @@ import {
   Target,
   CheckCircle2,
   Clock,
+  RefreshCw,
+  AlertTriangle,
+  BookOpen,
 } from 'lucide-react';
 import { AIChat } from '@/components/practice/AIChat';
 import { QuizQuestion, QuizResults } from '@/interfaces/test';
 import { ResultCard } from '@/components/practice/ResultCard';
 import { MathJaxContext } from 'better-react-mathjax';
+import { toast } from 'sonner';
+import { createClient } from '@/utils/supabase/client';
 
 // MathJax configuration
 const mathJaxConfig = {
@@ -187,13 +192,18 @@ const mathJaxConfig = {
 
 const SlidesQuizResultsPage: React.FC = () => {
   const params = useParams();
+  const searchParams = useSearchParams();
+  const submissionId = searchParams.get('submission') || '';
   const testId = typeof params.testId === 'string' ? params.testId : '';
   const guideId = typeof params.guideId === 'string' ? params.guideId : '';
   const router = useRouter();
+  const supabase = createClient();
 
   const [results, setResults] = useState<QuizResults | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [retryLoading, setRetryLoading] = useState<boolean>(false);
+  const [masteryThreshold, setMasteryThreshold] = useState<number>(80);
 
   useEffect(() => {
     const fetchResults = async (): Promise<void> => {
@@ -213,6 +223,15 @@ const SlidesQuizResultsPage: React.FC = () => {
 
         const data: QuizResults = await response.json();
         setResults(data);
+
+        // Also fetch mastery thresholds
+        const thresholdsResponse = await fetchWithAuth(
+          ENDPOINTS.masteryThresholds
+        );
+        if (thresholdsResponse.ok) {
+          const thresholdsData = await thresholdsResponse.json();
+          setMasteryThreshold(thresholdsData.mastery_threshold || 80);
+        }
       } catch (error: unknown) {
         const errorMessage =
           error instanceof Error ? error.message : 'An error occurred';
@@ -224,6 +243,63 @@ const SlidesQuizResultsPage: React.FC = () => {
 
     void fetchResults();
   }, [testId]);
+
+  const retryTest = async () => {
+    if (!testId || !submissionId || !results) return;
+
+    try {
+      setRetryLoading(true);
+
+      const userData = await supabase.auth.getUser();
+      const userId = userData.data?.user?.id;
+      if (!userId) throw new Error('User authentication required');
+
+      const token = await supabase.auth
+        .getSession()
+        .then((res) => res.data.session?.access_token);
+
+      const response = await fetch(ENDPOINTS.retryTest, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          test_id: testId,
+          study_guide_id: guideId,
+          previous_attempt_id: submissionId,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        if (data.can_retry) {
+          toast.success('Starting new test attempt');
+          router.push(
+            `/practice/guide/slides/${guideId}/quiz/${testId}?retry=true&attempt=${data.attempt_number}&previous=${submissionId}`
+          );
+        } else if (data.needs_remediation) {
+          toast.warning('Please review the remediation material first');
+          router.push(
+            `/practice/guide/slides/${guideId}/quiz/${testId}/remediation?submission=${submissionId}`
+          );
+        } else {
+          toast.info(data.message || 'Cannot retry test at this time');
+        }
+      } else {
+        throw new Error(data.message || 'Failed to process retry request');
+      }
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'An error occurred';
+      setError(errorMessage);
+      toast.error(`Error: ${errorMessage}`);
+    } finally {
+      setRetryLoading(false);
+    }
+  };
 
   return (
     <MathJaxContext config={mathJaxConfig}>
@@ -275,7 +351,7 @@ const SlidesQuizResultsPage: React.FC = () => {
           ) : (
             results && (
               <>
-                <div className="grid gap-6 md:grid-cols-4 mb-8">
+                <div className="grid gap-6 md:grid-cols-3 lg:grid-cols-6 mb-8">
                   <Card
                     className={cn(
                       'bg-white shadow-lg hover:shadow-xl transition-all duration-300',
@@ -302,7 +378,7 @@ const SlidesQuizResultsPage: React.FC = () => {
                     className={cn(
                       'bg-white shadow-lg hover:shadow-xl transition-all duration-300',
                       'border-l-4',
-                      results.accuracy >= 70
+                      results.accuracy >= masteryThreshold
                         ? 'border-l-green-500'
                         : 'border-l-yellow-500'
                     )}
@@ -318,6 +394,31 @@ const SlidesQuizResultsPage: React.FC = () => {
                         <span className="text-4xl font-bold text-gray-900">
                           {results.accuracy.toFixed(0)}%
                         </span>
+                      </div>
+                      <div className="mt-1">
+                        <div className="w-full bg-gray-200 h-1.5 rounded-full mt-1">
+                          <div
+                            className={cn(
+                              'h-1.5 rounded-full',
+                              results.accuracy >= masteryThreshold
+                                ? 'bg-green-500'
+                                : 'bg-yellow-500'
+                            )}
+                            style={{
+                              width: `${Math.min(100, results.accuracy)}%`,
+                            }}
+                          ></div>
+                          <div
+                            className="w-1 h-3 bg-red-500 rounded-sm relative"
+                            style={{
+                              marginLeft: `${masteryThreshold}%`,
+                              marginTop: '-2px',
+                            }}
+                          ></div>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Mastery threshold: {masteryThreshold}%
+                        </p>
                       </div>
                     </CardContent>
                   </Card>
@@ -349,7 +450,83 @@ const SlidesQuizResultsPage: React.FC = () => {
                     className={cn(
                       'bg-white shadow-lg hover:shadow-xl transition-all duration-300',
                       'border-l-4',
-                      'border-l-green-500'
+                      results.mastered
+                        ? 'border-l-green-500'
+                        : 'border-l-amber-500'
+                    )}
+                  >
+                    <CardContent className="p-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-semibold text-gray-700">
+                          Mastery
+                        </h3>
+                        {results.mastered ? (
+                          <CheckCircle2 className="h-6 w-6 text-green-500" />
+                        ) : (
+                          <AlertTriangle className="h-6 w-6 text-amber-500" />
+                        )}
+                      </div>
+                      <div className="flex items-baseline">
+                        <span className="text-2xl font-bold text-gray-900 capitalize">
+                          {results.mastered ? 'Achieved' : 'Not Yet'}
+                        </span>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card
+                    className={cn(
+                      'bg-white shadow-lg hover:shadow-xl transition-all duration-300',
+                      'border-l-4',
+                      'border-l-purple-500'
+                    )}
+                  >
+                    <CardContent className="p-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-semibold text-gray-700">
+                          Attempt
+                        </h3>
+                        <RefreshCw className="h-6 w-6 text-purple-500" />
+                      </div>
+                      <div className="flex items-baseline">
+                        <span className="text-4xl font-bold text-gray-900">
+                          {results.attempt_number || 1}
+                        </span>
+                        {results.attempts_remaining !== undefined && (
+                          <span className="ml-2 text-gray-600 text-sm">
+                            of {3}
+                          </span>
+                        )}
+                      </div>
+                      {!results.mastered && (
+                        <div className="mt-2">
+                          <div className="w-full bg-gray-200 h-1.5 rounded-full">
+                            <div
+                              className="h-1.5 bg-purple-500 rounded-full"
+                              style={{
+                                width: `${((results.attempt_number || 1) / 3) * 100}%`,
+                              }}
+                            ></div>
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1">
+                            {results.attempts_remaining === 0
+                              ? 'No attempts remaining'
+                              : `${results.attempts_remaining} attempt${results.attempts_remaining !== 1 ? 's' : ''} remaining before remediation`}
+                          </p>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  <Card
+                    className={cn(
+                      'bg-white shadow-lg hover:shadow-xl transition-all duration-300',
+                      'border-l-4',
+                      results.needs_remediation
+                        ? 'border-l-amber-500'
+                        : results.remediation_viewed
+                          ? 'border-l-green-500'
+                          : 'border-l-blue-500'
                     )}
                   >
                     <CardContent className="p-6">
@@ -357,15 +534,105 @@ const SlidesQuizResultsPage: React.FC = () => {
                         <h3 className="text-lg font-semibold text-gray-700">
                           Status
                         </h3>
-                        <CheckCircle2 className="h-6 w-6 text-green-500" />
+                        {results.needs_remediation ? (
+                          <BookOpen className="h-6 w-6 text-amber-500" />
+                        ) : results.remediation_viewed ? (
+                          <CheckCircle2 className="h-6 w-6 text-green-500" />
+                        ) : (
+                          <RefreshCw className="h-6 w-6 text-blue-500" />
+                        )}
                       </div>
                       <div className="flex items-baseline">
-                        <span className="text-4xl font-bold text-gray-900 capitalize">
-                          {results.status}
+                        <span className="text-xl font-bold text-gray-900 capitalize">
+                          {results.needs_remediation
+                            ? 'Review Needed'
+                            : results.remediation_viewed
+                              ? 'Ready to Retry'
+                              : results.can_retry
+                                ? 'Can Retry'
+                                : 'Complete'}
                         </span>
                       </div>
                     </CardContent>
                   </Card>
+                </div>
+
+                {/* Retry button and remediation guidance section */}
+                <div className="mb-8 flex flex-col gap-4">
+                  {results.mastered ? (
+                    <div className="bg-green-50 border border-green-200 p-4 rounded-lg flex items-center gap-4">
+                      <CheckCircle className="h-8 w-8 text-green-500 flex-shrink-0" />
+                      <div>
+                        <h3 className="font-semibold text-green-700">
+                          Mastery Achieved!
+                        </h3>
+                        <p className="text-green-600">
+                          Congratulations! You've demonstrated mastery of this
+                          topic. You can now proceed to the next topics.
+                        </p>
+                      </div>
+                    </div>
+                  ) : results.needs_remediation ? (
+                    <div className="bg-amber-50 border border-amber-200 p-4 rounded-lg flex items-center gap-4">
+                      <BookOpen className="h-8 w-8 text-amber-500 flex-shrink-0" />
+                      <div>
+                        <h3 className="font-semibold text-amber-700">
+                          Review Material Required
+                        </h3>
+                        <p className="text-amber-600">
+                          {results.attempt_number === 3
+                            ? "You've reached the maximum number of attempts (3) without achieving mastery."
+                            : `You need to review remediation after ${results.attempt_number} attempts.`}
+                          Please review the remediation material before
+                          retrying.
+                        </p>
+                        <Button
+                          onClick={() =>
+                            router.push(
+                              `/practice/guide/slides/${guideId}/quiz/${testId}/remediation?submission=${submissionId}`
+                            )
+                          }
+                          className="mt-2 bg-amber-500 hover:bg-amber-600 text-white"
+                        >
+                          View Remediation Material
+                        </Button>
+                      </div>
+                    </div>
+                  ) : results.can_retry !== false ? (
+                    <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg flex items-center gap-4">
+                      <RefreshCw className="h-8 w-8 text-blue-500 flex-shrink-0" />
+                      <div className="flex-grow">
+                        <h3 className="font-semibold text-blue-700">
+                          You can retry this test
+                        </h3>
+                        <p className="text-blue-600">
+                          {results.mastered
+                            ? "You've already achieved mastery! You can still retry if you want to improve your score."
+                            : `You haven't achieved mastery yet (need ${masteryThreshold}% accuracy). Review your answers below and try again.`}
+                        </p>
+                        {results.remediation_viewed && (
+                          <p className="text-green-600 mt-1 text-sm">
+                            <CheckCircle2 className="h-4 w-4 inline mr-1" />
+                            Remediation material reviewed
+                          </p>
+                        )}
+                      </div>
+                      <Button
+                        onClick={retryTest}
+                        disabled={retryLoading}
+                        className="bg-blue-500 hover:bg-blue-600 text-white"
+                      >
+                        {retryLoading ? (
+                          <>
+                            <span className="mr-2">Loading</span>
+                            <span className="animate-spin">⟳</span>
+                          </>
+                        ) : (
+                          'Retry Test'
+                        )}
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="space-y-6">

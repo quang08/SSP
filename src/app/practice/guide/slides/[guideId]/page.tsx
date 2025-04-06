@@ -5,12 +5,19 @@ import { useParams, useRouter } from 'next/navigation';
 import { Header } from '@/components/layout/header';
 import Link from 'next/link';
 import useSWR from 'swr';
+import { toast } from 'sonner';
 import {
   Accordion,
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { createClient } from '@/utils/supabase/client';
 import { Loading } from '@/components/ui/loading';
 import { ENDPOINTS } from '@/config/urls';
@@ -22,6 +29,7 @@ import {
   BarChart,
   PlayCircle,
   CheckCircle,
+  LockIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { motion } from 'framer-motion';
@@ -32,6 +40,7 @@ import {
   Concept,
   SlideQuestion,
   ShortAnswerSlideQuestion,
+  SlideTopic,
 } from '@/interfaces/topic';
 import { CompletedTest } from '@/interfaces/test';
 import { cn } from '@/lib/utils';
@@ -54,6 +63,7 @@ interface Topic {
   explanation?: string;
   source_pages?: number[];
   source_texts?: string[];
+  topic_prerequisites?: string[];
 }
 
 const container = {
@@ -99,6 +109,13 @@ const SlidesGuidePage: React.FC = () => {
   const [practiceTests, setPracticeTests] = useState<SlidePracticeTest[]>([]);
   const [completedTests, setCompletedTests] = useState(new Set<string>());
   const [generatingTests, setGeneratingTests] = useState(false);
+  const [lockedTests, setLockedTests] = useState<Record<string, boolean>>({});
+  const [testPrerequisites, setTestPrerequisites] = useState<
+    Record<string, string[]>
+  >({});
+  const [topicMasteryStatus, setTopicMasteryStatus] = useState<
+    Record<string, { isUnlocked: boolean; isMastered: boolean }>
+  >({});
 
   const { data: slidesGuide, error: slidesError } = useSWR<SlidesGuide>(
     guideId ? ENDPOINTS.slidesGuide(guideId) : null,
@@ -262,16 +279,68 @@ const SlidesGuidePage: React.FC = () => {
     }
   };
 
-  const handleQuizClick = (testId: string): void => {
+  // Add this function to check test prerequisites
+  const checkTestPrerequisites = async (
+    testId: string,
+    topicTitle: string
+  ): Promise<boolean> => {
+    try {
+      const userData = await supabase.auth.getUser();
+      const userId = userData.data?.user?.id;
+
+      if (userId && guideId && topicTitle) {
+        const token = await supabase.auth
+          .getSession()
+          .then((res) => res.data.session?.access_token);
+
+        const response = await fetch(
+          ENDPOINTS.testStatus(userId, guideId, topicTitle, testId),
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          return data.is_unlocked;
+        }
+      }
+      return false;
+    } catch (error) {
+      console.error('Error checking test prerequisites:', error);
+      return false;
+    }
+  };
+
+  const handleQuizClick = async (
+    testId: string,
+    topicTitle: string
+  ): Promise<void> => {
+    // If test is already completed, just show the results
     if (completedTests.has(testId)) {
       router.push(
         `/practice/guide/slides/${encodeURIComponent(guideId)}/quiz/${testId}/results`
       );
-    } else {
-      router.push(
-        `/practice/guide/slides/${encodeURIComponent(guideId)}/quiz/${testId}`
-      );
+      return;
     }
+
+    // Check if the test is unlocked based on prerequisites
+    const isUnlocked = await checkTestPrerequisites(testId, topicTitle);
+
+    if (!isUnlocked) {
+      // Show a toast notification instead of an alert
+      toast.error('Prerequisites Required', {
+        description:
+          'You need to master the prerequisite topics before taking this test.',
+        duration: 4000,
+      });
+      return;
+    }
+
+    // If test is not completed and is unlocked, navigate to the test
+    router.push(
+      `/practice/guide/slides/${encodeURIComponent(guideId)}/quiz/${testId}`
+    );
   };
 
   const loading = !slidesGuide;
@@ -299,18 +368,159 @@ const SlidesGuidePage: React.FC = () => {
     return topicTests.length > 0 ? [topicTests[0]] : [];
   };
 
-  const renderTopic = (topic: Topic) => {
+  // Add this function to check topic prerequisites mastery status
+  const checkTopicPrerequisites = async (topicTitle: string) => {
+    try {
+      const userData = await supabase.auth.getUser();
+      const userId = userData.data?.user?.id;
+
+      if (userId && guideId) {
+        const token = await supabase.auth
+          .getSession()
+          .then((res) => res.data.session?.access_token);
+
+        const response = await fetch(
+          ENDPOINTS.topicStatus(userId, guideId, topicTitle),
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          setTopicMasteryStatus((prev) => ({
+            ...prev,
+            [topicTitle]: {
+              isUnlocked: data.is_unlocked,
+              isMastered: data.is_mastered,
+            },
+          }));
+          return data;
+        }
+      }
+    } catch (error) {
+      console.error('Error checking topic prerequisites:', error);
+    }
+    return null;
+  };
+
+  // Add this useEffect to check prerequisites for all topics when they load
+  useEffect(() => {
+    if (slidesGuide?.topics) {
+      slidesGuide.topics.forEach((topic: SlideTopic) => {
+        // Check if topic has prerequisites and if they exist
+        const prerequisites = topic.topic_prerequisites || [];
+        if (prerequisites.length > 0) {
+          checkTopicPrerequisites(topic.title);
+        }
+      });
+    }
+  }, [slidesGuide]);
+
+  // Use this to check locked status when tests load
+  useEffect(() => {
+    const checkTestLockStatus = async () => {
+      if (!slidesGuide?.topics || practiceTests.length === 0) return;
+
+      const newLockedStatus: Record<string, boolean> = {};
+      const newPrerequisitesStatus: Record<string, string[]> = {};
+
+      for (const topic of slidesGuide.topics) {
+        const topicTests = getTestsByTopic(topic.title);
+
+        for (const test of topicTests) {
+          try {
+            const userData = await supabase.auth.getUser();
+            const userId = userData.data?.user?.id;
+
+            if (userId && guideId && topic.title) {
+              const token = await supabase.auth
+                .getSession()
+                .then((res) => res.data.session?.access_token);
+
+              const response = await fetch(
+                ENDPOINTS.testStatus(
+                  userId,
+                  guideId,
+                  topic.title,
+                  test.practice_test_id
+                ),
+                { headers: { Authorization: `Bearer ${token}` } }
+              );
+
+              if (response.ok) {
+                const data = await response.json();
+                newLockedStatus[test.practice_test_id] = !data.is_unlocked;
+                newPrerequisitesStatus[test.practice_test_id] =
+                  data.prerequisites || [];
+              }
+            }
+          } catch (error) {
+            console.error('Error checking test lock status:', error);
+          }
+        }
+      }
+
+      setLockedTests(newLockedStatus);
+      setTestPrerequisites(newPrerequisitesStatus);
+    };
+
+    checkTestLockStatus();
+  }, [practiceTests, slidesGuide]);
+
+  const renderTopic = (topic: Topic & SlideTopic) => {
+    // Safe check for prerequisites
+    const prerequisites = topic.topic_prerequisites || [];
+    const hasPrerequisites = prerequisites.length > 0;
+    const topicStatus = topicMasteryStatus[topic.title];
+
     return (
       <motion.div key={topic.title} variants={item} className="space-y-4">
         <div className="flex items-start justify-between">
-          <h3 className="text-xl font-semibold text-[var(--color-text)]">
+          <h3 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
             {topic.title}
+            {hasPrerequisites && (
+              <span
+                className={`text-xs px-2 py-1 rounded-full ${
+                  topicStatus?.isUnlocked
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-amber-100 text-amber-700'
+                }`}
+              >
+                {topicStatus?.isUnlocked ? 'Unlocked' : 'Locked'}
+              </span>
+            )}
           </h3>
         </div>
         {topic.description && (
           <p className="text-[var(--color-text-secondary)]">
             {topic.description}
           </p>
+        )}
+        {hasPrerequisites && (
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm">
+            <p className="font-medium text-gray-700 mb-2">Prerequisites:</p>
+            <ul className="list-disc list-inside space-y-1 text-gray-600">
+              {prerequisites.map((prereq, index) => (
+                <li key={index} className="flex items-center gap-2">
+                  <span>{prereq}</span>
+                  {topicMasteryStatus[prereq] && (
+                    <span
+                      className={`text-xs px-1.5 py-0.5 rounded-full ${
+                        topicMasteryStatus[prereq].isMastered
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-gray-100 text-gray-700'
+                      }`}
+                    >
+                      {topicMasteryStatus[prereq].isMastered
+                        ? 'Mastered'
+                        : 'Not Mastered'}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
         {topic.explanation && (
           <p className="text-[var(--color-text-secondary)]">
@@ -587,10 +797,19 @@ const SlidesGuidePage: React.FC = () => {
                                               ) => (
                                                 <div
                                                   key={testIndex}
-                                                  className="rounded-lg border border-gray-200 p-3 hover:border-blue-300 transition-all cursor-pointer"
+                                                  id={`test-${test.practice_test_id}`}
+                                                  className={cn(
+                                                    'rounded-lg border p-3 transition-all',
+                                                    lockedTests[
+                                                      test.practice_test_id
+                                                    ]
+                                                      ? 'border-gray-300 bg-gray-50 cursor-not-allowed'
+                                                      : 'border-gray-200 hover:border-blue-300 cursor-pointer'
+                                                  )}
                                                   onClick={() =>
                                                     handleQuizClick(
-                                                      test.practice_test_id
+                                                      test.practice_test_id,
+                                                      topic.title
                                                     )
                                                   }
                                                 >
@@ -600,15 +819,78 @@ const SlidesGuidePage: React.FC = () => {
                                                         test.practice_test_id
                                                       ) ? (
                                                         <CheckCircle className="h-4 w-4 text-green-500" />
+                                                      ) : lockedTests[
+                                                          test.practice_test_id
+                                                        ] ? (
+                                                        <TooltipProvider>
+                                                          <Tooltip>
+                                                            <TooltipTrigger>
+                                                              <LockIcon className="h-4 w-4 text-gray-500" />
+                                                            </TooltipTrigger>
+                                                            <TooltipContent className="w-64 p-3">
+                                                              <p className="font-medium text-sm mb-2">
+                                                                Required
+                                                                Prerequisites:
+                                                              </p>
+                                                              <ul className="list-disc list-inside space-y-1 text-xs">
+                                                                {testPrerequisites[
+                                                                  test
+                                                                    .practice_test_id
+                                                                ]?.map(
+                                                                  (
+                                                                    prereq,
+                                                                    i
+                                                                  ) => (
+                                                                    <li
+                                                                      key={i}
+                                                                      className="text-gray-700"
+                                                                    >
+                                                                      {prereq}
+                                                                      {topicMasteryStatus[
+                                                                        prereq
+                                                                      ] && (
+                                                                        <span
+                                                                          className={`ml-1 text-xs ${topicMasteryStatus[prereq].isMastered ? 'text-green-600' : 'text-amber-600'}`}
+                                                                        >
+                                                                          (
+                                                                          {topicMasteryStatus[
+                                                                            prereq
+                                                                          ]
+                                                                            .isMastered
+                                                                            ? 'Mastered'
+                                                                            : 'Not Mastered'}
+                                                                          )
+                                                                        </span>
+                                                                      )}
+                                                                    </li>
+                                                                  )
+                                                                )}
+                                                              </ul>
+                                                            </TooltipContent>
+                                                          </Tooltip>
+                                                        </TooltipProvider>
                                                       ) : (
                                                         <PlayCircle className="h-4 w-4 text-blue-500" />
                                                       )}
-                                                      <span className="font-medium text-sm">
+                                                      <span
+                                                        className={cn(
+                                                          'font-medium text-sm',
+                                                          lockedTests[
+                                                            test
+                                                              .practice_test_id
+                                                          ] && 'text-gray-500'
+                                                        )}
+                                                      >
                                                         {completedTests.has(
                                                           test.practice_test_id
                                                         )
                                                           ? 'View Results'
-                                                          : 'Take Quiz'}
+                                                          : lockedTests[
+                                                                test
+                                                                  .practice_test_id
+                                                              ]
+                                                            ? 'Locked (Prerequisites Required)'
+                                                            : 'Take Quiz'}
                                                       </span>
                                                     </div>
                                                     <span className="text-xs text-gray-500">

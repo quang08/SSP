@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Header } from '@/components/layout/header';
 import QuestionCard from '@/components/practice/card-question';
 import ShortAnswerQuestionCard from '@/components/practice/card-short-answer-question';
@@ -82,14 +82,24 @@ interface StandardTestSubmissionPayload {
   }>;
   section_title: string;
   chapter_title: string;
+  is_retry: boolean;
+  previous_attempt_id?: string;
+  attempt_number: number;
 }
 
 const SlidesQuizPage: React.FC = () => {
   const params = useParams();
+  const searchParams = useSearchParams();
   const testId = typeof params.testId === 'string' ? params.testId : '';
   const guideId = typeof params.guideId === 'string' ? params.guideId : '';
   const router = useRouter();
   const supabase = createClient();
+
+  // Get retry parameters from URL
+  const isRetry = searchParams.get('retry') === 'true';
+  const attemptNumber = parseInt(searchParams.get('attempt') || '1');
+  const previousAttemptId = searchParams.get('previous') || '';
+
   const [notes, setNotes] = useState<{ [key: string]: string }>({});
   const [startTime, setStartTime] = useState<number>(0);
   const [shortAnswers, setShortAnswers] = useState<{ [key: string]: string }>(
@@ -348,6 +358,9 @@ const SlidesQuizPage: React.FC = () => {
           })),
           section_title: sectionTitle,
           chapter_title: chapterTitle,
+          is_retry: isRetry,
+          previous_attempt_id: isRetry ? previousAttemptId : undefined,
+          attempt_number: isRetry ? attemptNumber : 1,
         };
         console.log(
           'Submitting STANDARD test (from slides page) to:',
@@ -376,7 +389,7 @@ const SlidesQuizPage: React.FC = () => {
 
       const result = await response.json();
 
-      // Navigate based on test type
+      // Navigate based on test type and result
       if (testType === 'adaptive') {
         console.log('Adaptive test submitted successfully:', result);
         toast.success('Adaptive test submitted!', {
@@ -392,6 +405,28 @@ const SlidesQuizPage: React.FC = () => {
 
         router.push('/adaptive-test');
       } else {
+        // Check if server returned special status fields for mastery model
+        if (result.mastered) {
+          toast.success('Congratulations! You have mastered this topic!', {
+            duration: 3000,
+          });
+        } else if (result.needs_remediation) {
+          toast.warning('Review needed before your next attempt.', {
+            duration: 3000,
+          });
+          router.push(
+            `/practice/guide/slides/${encodeURIComponent(guideId)}/quiz/${testId}/remediation?submission=${result.submission_id}`
+          );
+          return;
+        } else if (result.can_retry) {
+          toast.info(
+            `You can retry this test. Attempt ${result.attempt_number}/${result.attempts_remaining + result.attempt_number}`,
+            {
+              duration: 3000,
+            }
+          );
+        }
+
         // Show loading indicator before navigation
         toast.info('Loading quiz results...', {
           duration: 2000,

@@ -60,6 +60,7 @@ export interface SlideTopic {
   explanation?: string;
   source_pages?: number[];
   source_texts?: string[];
+  topic_prerequisites?: string[];
   quizzes?: {
     topic: string;
     quizzes: {
