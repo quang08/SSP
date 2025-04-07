@@ -57,7 +57,7 @@
 - Directs users to remediation page when needed based on submission results
 - No apparent inefficiencies in call patterns
 
-## practice/guide/slides/[guideId]/quiz/[testId]/results/page.tsx 
+## practice/guide/slides/[guideId]/quiz/[testId]/results/page.tsx [Done]
 - `ENDPOINTS.testResults(userId, submissionId)` - Fetch specific test submission results
 - `ENDPOINTS.topicSpecificMastery` - Get topic-specific mastery data
 - `ENDPOINTS.retryTest` - Request a test retry
@@ -89,7 +89,7 @@
 - Makes POST request to mark remediation as viewed when user completes viewing
 - Offers retry functionality after remediation is completed
 
-## practice/guide/[title]/quiz/[testId]/page.tsx
+## practice/guide/[title]/quiz/[testId]/page.tsx [Done]
 - `ENDPOINTS.practiceTest(testId)` - Fetch specific quiz data
 - `ENDPOINTS.studyGuide(title)` - Get study guide data 
 - `ENDPOINTS.submitAdaptiveTest` - Submit adaptive test results
@@ -103,6 +103,35 @@
 - Has efficient error handling with proper error displays to users
 - Detects the test type (adaptive vs standard) and uses the appropriate submission endpoint
 - Potential optimization: Reuse study guide data from previous page navigation context instead of fetching again
+
+### Optimized with Consolidated Endpoint:
+- `ENDPOINTS.quizWithGuideData(testId, title)` - New consolidated endpoint
+- Reduces multiple API calls to a single request
+- Returns combined data including:
+  - Complete quiz data with questions
+  - Relevant study guide data for the specific section
+- Implements caching with SWR's dedupingInterval
+- Reduces network overhead and eliminates separate API calls
+- Optimizes payload size by only including relevant sections from the study guide
+
+## practice/guide/[title]/quiz/[testId]/results/page.tsx
+- `ENDPOINTS.testResults(authUserId, testId)` - Fetch specific test submission results
+
+**Analysis:**
+- Makes a single API call to fetch test results without any caching strategy
+- No revalidation mechanism in place if data changes
+- Missing potential additional data that might be useful (like mastery thresholds)
+- Uses direct fetch rather than SWR, missing out on caching benefits
+- No error retry mechanism if the network request fails temporarily
+- Every page navigation triggers a fresh API call, even for the same test
+- The Back button links directly to the study guide, potentially causing unnecessary data refetching
+
+**Optimization Opportunity:**
+- Implement a consolidated endpoint similar to the slides version
+- Add SWR for caching and revalidation
+- Include mastery thresholds and retry eligibility in a single request
+- Create `ENDPOINTS.quizResultsWithData` for regular guides similar to slides guides
+- Share data between quiz taking and results pages to reduce redundant fetching
 
 ## dashboard/page.tsx [Done]
 - `ENDPOINTS.topicMastery(userId)` - Fetch user's topic mastery data
@@ -417,6 +446,28 @@ To optimize performance and reduce the number of API calls, the following consol
 - Simplified frontend code with unified data handling
 - Enhanced user experience with faster results display
 - Better remediation status tracking
+
+### 7. Quiz with Guide Data (Quiz Page)
+
+**Endpoint**: `/api/study-guide/quiz-with-guide-data/:test_id/:title`  
+**Frontend usage**: `ENDPOINTS.quizWithGuideData(testId, title)`  
+**Purpose**: Consolidates multiple API calls needed for the quiz page into a single request.
+
+**Returns**:
+- Complete quiz data with questions
+- Relevant study guide data focused only on the sections needed for the quiz
+- Lightweight study guide payload optimized for quiz context
+
+**Reduces From**:
+- Previously: 2+ separate API calls (quiz data, study guide data)
+- Now: 1 consolidated API call
+
+**Benefits**:
+- Improved page load performance
+- Reduced network overhead
+- Optimized payload size by only including relevant sections
+- Enhanced client-side rendering speed
+- Better user experience with faster content delivery
 
 ## Benefits of Consolidated Endpoints
 

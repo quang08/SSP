@@ -14,6 +14,8 @@ export const ENDPOINTS = {
     `${API_URL}/api/study-guide/slides-guide-with-data/${encodeURIComponent(guideId)}/${encodeURIComponent(userId)}`,
   quizWithGuide: (testId: string, guideId: string, userId: string) =>
     `${API_URL}/api/study-guide/quiz-with-guide/${encodeURIComponent(testId)}/${encodeURIComponent(guideId)}/${encodeURIComponent(userId)}`,
+  quizWithGuideData: (testId: string, title: string) =>
+    `${API_URL}/api/study-guide/quiz-with-guide-data/${encodeURIComponent(testId)}/${title}`,
   quizResultsWithData: (testId: string, userId: string, submissionId: string) =>
     `${API_URL}/api/study-guide/quiz-results-with-data/${encodeURIComponent(testId)}/${encodeURIComponent(userId)}/${encodeURIComponent(submissionId)}`,
   slidesPracticeTests: (guideId: string) =>

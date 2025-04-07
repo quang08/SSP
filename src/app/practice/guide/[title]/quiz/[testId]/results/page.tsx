@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { fetchWithAuth } from '@/app/auth/fetchWithAuth';
 import { Header } from '@/components/layout/header';
@@ -19,11 +19,15 @@ import {
   Target,
   CheckCircle2,
   Clock,
+  RefreshCw,
 } from 'lucide-react';
 import { AIChat } from '@/components/practice/AIChat';
 import { QuizQuestion, QuizResults } from '@/interfaces/test';
 import { ResultCard } from '@/components/practice/ResultCard';
 import { MathJaxContext } from 'better-react-mathjax';
+import useSWR from 'swr';
+import { toast } from 'sonner';
+import { createClient } from '@/utils/supabase/client';
 
 // MathJax configuration
 const mathJaxConfig = {
@@ -185,45 +189,144 @@ const mathJaxConfig = {
   },
 };
 
+// Fetcher for authenticated requests
+const fetcher = async (url: string) => {
+  const supabase = createClient();
+  const token = await supabase.auth
+    .getSession()
+    .then((res) => res.data.session?.access_token);
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Failed to fetch data');
+  return res.json();
+};
+
+interface ConsolidatedResultsResponse {
+  submission: QuizResults;
+  mastery_thresholds?: {
+    pass_threshold: number;
+    mastery_threshold: number;
+  };
+  can_retry?: boolean;
+  attempts_remaining?: number;
+  topic_mastery?: {
+    current_score: number;
+    is_mastered: boolean;
+  };
+}
+
 const QuizResultsPage: React.FC = () => {
   const params = useParams();
   const testId = typeof params.testId === 'string' ? params.testId : '';
   const title = typeof params.title === 'string' ? params.title : '';
   const router = useRouter();
 
-  const [results, setResults] = useState<QuizResults | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+  // Get submission ID from URL query parameters
+  const [submissionId, setSubmissionId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
 
+  // State for additional data from the consolidated endpoint
+  const [masteryThresholds, setMasteryThresholds] = useState<{
+    pass_threshold: number;
+    mastery_threshold: number;
+  } | null>(null);
+  const [canRetry, setCanRetry] = useState<boolean>(false);
+  const [attemptsRemaining, setAttemptsRemaining] = useState<number>(0);
+  const [topicMastery, setTopicMastery] = useState<{
+    current_score: number;
+    is_mastered: boolean;
+  } | null>(null);
+
+  // Initialize user ID and submission ID
   useEffect(() => {
-    const fetchResults = async (): Promise<void> => {
-      if (!testId) return;
+    const initData = async () => {
+      const authUserId = await getUserId();
+      setUserId(authUserId);
 
-      try {
-        const authUserId = await getUserId();
-        if (!authUserId) throw new Error('User authentication required');
-
-        const response = await fetchWithAuth(
-          ENDPOINTS.testResults(authUserId, testId)
-        );
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch results');
-        }
-
-        const data: QuizResults = await response.json();
-        setResults(data);
-      } catch (error: unknown) {
-        const errorMessage =
-          error instanceof Error ? error.message : 'An error occurred';
-        setError(errorMessage);
-      } finally {
-        setLoading(false);
-      }
+      const urlParams = new URLSearchParams(window.location.search);
+      const subId = urlParams.get('submission');
+      setSubmissionId(subId);
     };
 
-    void fetchResults();
-  }, [testId]);
+    initData();
+  }, []);
+
+  // Create the fetch key based on available parameters
+  const fetchKey = useMemo(() => {
+    if (!userId || !testId) return null;
+
+    if (submissionId) {
+      return ENDPOINTS.quizResultsWithData(testId, userId, submissionId);
+    }
+
+    return ENDPOINTS.testResults(userId, testId);
+  }, [userId, testId, submissionId]);
+
+  // Fetch data using SWR
+  const { data, error, isLoading, mutate } = useSWR(fetchKey, fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 60000, // 1 minute
+    errorRetryCount: 3,
+  });
+
+  // Process data when it changes
+  useEffect(() => {
+    if (!data) return;
+
+    // Check if we have the consolidated response format
+    if (data && typeof data === 'object' && 'submission' in data) {
+      // It's the consolidated response
+      const consolidatedData = data as ConsolidatedResultsResponse;
+      setMasteryThresholds(consolidatedData.mastery_thresholds || null);
+      setCanRetry(consolidatedData.can_retry || false);
+      setAttemptsRemaining(consolidatedData.attempts_remaining || 0);
+      setTopicMastery(consolidatedData.topic_mastery || null);
+    }
+  }, [data]);
+
+  // Parse the results data from either format
+  const results = useMemo(() => {
+    if (!data) return null;
+
+    if (typeof data === 'object' && 'submission' in data) {
+      return (data as ConsolidatedResultsResponse).submission;
+    }
+
+    return data as QuizResults;
+  }, [data]);
+
+  // Handle retry
+  const handleRetry = async () => {
+    if (!userId || !testId) return;
+
+    try {
+      const response = await fetchWithAuth(ENDPOINTS.retryTest, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          test_id: testId,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to retry test');
+      }
+
+      toast.success('Test retry initialized. Redirecting to quiz page...');
+
+      // Navigate back to quiz page
+      router.push(
+        `/practice/guide/${encodeURIComponent(title)}/quiz/${testId}`
+      );
+    } catch (err) {
+      toast.error('Failed to initialize retry. Please try again.');
+      console.error('Error retrying test:', err);
+    }
+  };
 
   return (
     <MathJaxContext config={mathJaxConfig}>
@@ -238,20 +341,36 @@ const QuizResultsPage: React.FC = () => {
             Back to Study Guide
           </Link>
 
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900">Quiz Results</h1>
-            <p className="mt-2 text-gray-600">
-              Review your answers and learn from the explanations
-            </p>
+          <div className="mb-8 flex justify-between items-center">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Quiz Results</h1>
+              <p className="mt-2 text-gray-600">
+                Review your answers and learn from the explanations
+              </p>
+            </div>
+
+            {/* Add refresh button */}
+            {!isLoading && (
+              <Button
+                variant="outline"
+                onClick={() => mutate()}
+                className="flex items-center gap-2"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Refresh
+              </Button>
+            )}
           </div>
 
-          {loading ? (
+          {isLoading ? (
             <Loading size="lg" text="Loading results..." />
           ) : error ? (
             <div className="text-center p-6 bg-red-50 rounded-xl border border-red-200">
-              <p className="text-base text-red-500">Error: {error}</p>
+              <p className="text-base text-red-500">
+                Error: Failed to fetch quiz results
+              </p>
               <Button
-                onClick={() => window.location.reload()}
+                onClick={() => mutate()}
                 className="mt-4"
                 variant="default"
               >
@@ -288,9 +407,13 @@ const QuizResultsPage: React.FC = () => {
                     className={cn(
                       'bg-white shadow-lg hover:shadow-xl transition-all duration-300',
                       'border-l-4',
-                      results.accuracy >= 70
+                      results.accuracy >=
+                        (masteryThresholds?.mastery_threshold || 70)
                         ? 'border-l-green-500'
-                        : 'border-l-yellow-500'
+                        : results.accuracy >=
+                            (masteryThresholds?.pass_threshold || 50)
+                          ? 'border-l-yellow-500'
+                          : 'border-l-red-500'
                     )}
                   >
                     <CardContent className="p-6">
@@ -305,6 +428,12 @@ const QuizResultsPage: React.FC = () => {
                           {results.accuracy.toFixed(0)}%
                         </span>
                       </div>
+                      {masteryThresholds && (
+                        <div className="mt-2 text-xs text-gray-500">
+                          Pass: {masteryThresholds.pass_threshold}% / Mastery:{' '}
+                          {masteryThresholds.mastery_threshold}%
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
 
@@ -350,9 +479,51 @@ const QuizResultsPage: React.FC = () => {
                           {results.status}
                         </span>
                       </div>
+
+                      {/* Add retry button if available */}
+                      {canRetry && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleRetry}
+                          className="mt-2 w-full"
+                        >
+                          Retry Test ({attemptsRemaining} left)
+                        </Button>
+                      )}
                     </CardContent>
                   </Card>
                 </div>
+
+                {/* Add topic mastery info if available */}
+                {topicMastery && (
+                  <Card className="mb-6 bg-white shadow-md">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-md font-semibold">
+                            Topic Mastery
+                          </h3>
+                          <p className="text-sm text-gray-600">
+                            Current mastery level:{' '}
+                            {topicMastery.current_score.toFixed(0)}%
+                          </p>
+                        </div>
+                        <div
+                          className={`px-3 py-1 rounded-full text-sm ${
+                            topicMastery.is_mastered
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-yellow-100 text-yellow-800'
+                          }`}
+                        >
+                          {topicMastery.is_mastered
+                            ? 'Mastered'
+                            : 'In Progress'}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
 
                 <div className="space-y-6">
                   {results.questions.map((question, index) => (

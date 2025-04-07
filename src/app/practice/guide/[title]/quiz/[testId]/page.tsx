@@ -22,7 +22,7 @@ import {
   QuestionType,
   QuizQuestion,
 } from '@/interfaces/test';
-import { StudyGuideResponse } from '@/interfaces/topic';
+import { StudyGuideResponse, Chapter, Section } from '@/interfaces/topic';
 import { MathJaxContext } from 'better-react-mathjax';
 import { toast } from 'sonner';
 import { initSessionActivity } from '@/utils/session-management';
@@ -318,18 +318,19 @@ const QuizPage: React.FC = () => {
     return data?.user;
   });
 
-  // Fetch quiz content
-  const { data: quiz, error: quizError } = useSWR<Quiz>(
-    testId ? ENDPOINTS.practiceTest(testId) : null,
-    fetcher
+  // Use the consolidated endpoint for fetching quiz and study guide data
+  const { data: consolidatedData, error: consolidatedError } = useSWR(
+    testId && title ? ENDPOINTS.quizWithGuideData(testId, title) : null,
+    fetcher,
+    {
+      dedupingInterval: 60000, // Cache for 1 minute
+      revalidateOnFocus: false, // Don't revalidate on tab focus
+    }
   );
 
-  // Fetch study guide data
-  const { data: studyGuideData, error: studyGuideError } =
-    useSWR<ExtendedStudyGuideResponse>(
-      title ? ENDPOINTS.studyGuide(title) : null,
-      fetcher
-    );
+  // Extract data from consolidated response
+  const quiz = consolidatedData?.quiz;
+  const studyGuideData = consolidatedData?.study_guide;
 
   const [selectedAnswers, setSelectedAnswers] = React.useState<SelectedAnswers>(
     {}
@@ -337,8 +338,8 @@ const QuizPage: React.FC = () => {
   const [submitting, setSubmitting] = React.useState<boolean>(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  const loading = !quiz || !studyGuideData || !userData;
-  const anyError = quizError || studyGuideError || error;
+  const loading = !consolidatedData || !userData;
+  const anyError = consolidatedError || error;
 
   // Process quiz questions to separate multiple choice and short answer
   const processedQuestions = React.useMemo(() => {
@@ -346,14 +347,14 @@ const QuizPage: React.FC = () => {
 
     // Extract multiple choice and short answer questions
     const multipleChoice = quiz.questions.filter(
-      (q) => q.choices !== undefined
+      (q: Question) => q.choices !== undefined
     );
 
     // Parse short answer questions if they exist
     let shortAnswer: ShortAnswerQuestion[] = [];
 
     if (quiz.short_answer) {
-      shortAnswer = quiz.short_answer.map((q, i) => ({
+      shortAnswer = quiz.short_answer.map((q: any, i: number) => ({
         question_id: `sa_${i}`,
         question: q.question,
         ideal_answer: q.ideal_answer,
@@ -371,8 +372,8 @@ const QuizPage: React.FC = () => {
 
     const topics: { [key: string]: { title: string; chapter: string } } = {};
 
-    studyGuideData.chapters.forEach((chapter) => {
-      chapter.sections.forEach((section) => {
+    studyGuideData.chapters.forEach((chapter: Chapter) => {
+      chapter.sections.forEach((section: Section) => {
         topics[section.title] = {
           title: section.title,
           chapter: chapter.title,
@@ -461,15 +462,13 @@ const QuizPage: React.FC = () => {
 
       // Find matching chapter/section in the study guide
       let chapterTitle = '';
-      if (studyGuideData.chapters && sectionTitle) {
-        for (const chapter of studyGuideData.chapters) {
-          const matchingSection = chapter.sections.find(
-            (section) => section.title === sectionTitle
-          );
-          if (matchingSection) {
-            chapterTitle = chapter.title;
-            break;
-          }
+      for (const chapter of studyGuideData.chapters as Chapter[]) {
+        const matchingSection = chapter.sections.find(
+          (section: Section) => section.title === sectionTitle
+        );
+        if (matchingSection) {
+          chapterTitle = chapter.title;
+          break;
         }
       }
 
@@ -805,62 +804,66 @@ const QuizPage: React.FC = () => {
               <>
                 <div className="space-y-8">
                   {/* Multiple Choice Questions */}
-                  {processedQuestions.multipleChoice.map((question, index) => (
-                    <QuestionCard
-                      key={`mc_${index}`}
-                      questionNumber={index + 1}
-                      question={{
-                        question_id: `${index}`,
-                        question_text: question.question,
-                        options: question.choices || {},
-                        correct_answer: question.correct || '',
-                        explanation: question.explanation || '',
-                        source_page: question.source_page,
-                        source_text: question.source_text,
-                      }}
-                      onSelectAnswer={handleSelectAnswer}
-                      selectedAnswer={selectedAnswers[index.toString()]}
-                      note={notes[index.toString()] || ''}
-                      onUpdateNote={(questionId: string, newNote: string) =>
-                        setNotes((prevNotes) => ({
-                          ...prevNotes,
-                          [questionId]: newNote,
-                        }))
-                      }
-                      userId={userData?.id || ''}
-                      testId={testId}
-                      confidence={confidenceLevels[index.toString()] || 0.5}
-                      onUpdateConfidence={handleUpdateConfidence}
-                    />
-                  ))}
+                  {processedQuestions.multipleChoice.map(
+                    (question: Question, index: number) => (
+                      <QuestionCard
+                        key={`mc_${index}`}
+                        questionNumber={index + 1}
+                        question={{
+                          question_id: `${index}`,
+                          question_text: question.question,
+                          options: question.choices || {},
+                          correct_answer: question.correct || '',
+                          explanation: question.explanation || '',
+                          source_page: question.source_page,
+                          source_text: question.source_text,
+                        }}
+                        onSelectAnswer={handleSelectAnswer}
+                        selectedAnswer={selectedAnswers[index.toString()]}
+                        note={notes[index.toString()] || ''}
+                        onUpdateNote={(questionId: string, newNote: string) =>
+                          setNotes((prevNotes) => ({
+                            ...prevNotes,
+                            [questionId]: newNote,
+                          }))
+                        }
+                        userId={userData?.id || ''}
+                        testId={testId}
+                        confidence={confidenceLevels[index.toString()] || 0.5}
+                        onUpdateConfidence={handleUpdateConfidence}
+                      />
+                    )
+                  )}
 
                   {/* Short Answer Questions */}
-                  {processedQuestions.shortAnswer.map((question, index) => (
-                    <ShortAnswerQuestionCard
-                      key={`sa_${index}`}
-                      questionNumber={totalMultipleChoice + index + 1}
-                      question={{
-                        question_id: `sa_${index}`,
-                        question_text: question.question,
-                        ideal_answer: question.ideal_answer,
-                        source_page: question.source_page,
-                        source_text: question.source_text,
-                      }}
-                      onAnswerChange={handleShortAnswer}
-                      answerText={shortAnswers[`sa_${index}`] || ''}
-                      note={notes[`sa_${index}`] || ''}
-                      onUpdateNote={(questionId: string, newNote: string) =>
-                        setNotes((prevNotes) => ({
-                          ...prevNotes,
-                          [questionId]: newNote,
-                        }))
-                      }
-                      userId={userData?.id || ''}
-                      testId={testId}
-                      confidence={confidenceLevels[`sa_${index}`] || 0.5}
-                      onUpdateConfidence={handleUpdateConfidence}
-                    />
-                  ))}
+                  {processedQuestions.shortAnswer.map(
+                    (question: ShortAnswerQuestion, index: number) => (
+                      <ShortAnswerQuestionCard
+                        key={`sa_${index}`}
+                        questionNumber={totalMultipleChoice + index + 1}
+                        question={{
+                          question_id: `sa_${index}`,
+                          question_text: question.question,
+                          ideal_answer: question.ideal_answer,
+                          source_page: question.source_page,
+                          source_text: question.source_text,
+                        }}
+                        onAnswerChange={handleShortAnswer}
+                        answerText={shortAnswers[`sa_${index}`] || ''}
+                        note={notes[`sa_${index}`] || ''}
+                        onUpdateNote={(questionId: string, newNote: string) =>
+                          setNotes((prevNotes) => ({
+                            ...prevNotes,
+                            [questionId]: newNote,
+                          }))
+                        }
+                        userId={userData?.id || ''}
+                        testId={testId}
+                        confidence={confidenceLevels[`sa_${index}`] || 0.5}
+                        onUpdateConfidence={handleUpdateConfidence}
+                      />
+                    )
+                  )}
                 </div>
 
                 <div className="mt-10 flex justify-end">
