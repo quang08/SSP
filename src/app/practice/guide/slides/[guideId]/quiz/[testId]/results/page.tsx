@@ -602,8 +602,8 @@ const SlidesQuizResultsPage: React.FC = () => {
                           Mastery Achieved!
                         </h3>
                         <p className="text-green-600">
-                          Congratulations! You've demonstrated mastery of this
-                          topic. You can now proceed to the next topics.
+                          Congratulations! You&rsquo;ve demonstrated mastery of
+                          this topic. You can now proceed to the next topics.
                         </p>
                       </div>
                     </div>

@@ -66,6 +66,19 @@ interface Topic {
   topic_prerequisites?: string[];
 }
 
+// Add new interfaces for the topic and test statuses
+interface TopicStatus {
+  topic_title: string;
+  is_unlocked: boolean;
+  is_mastered: boolean;
+}
+
+interface TestStatus {
+  test_id: string;
+  is_unlocked: boolean;
+  prerequisites?: string[];
+}
+
 const container = {
   hidden: { opacity: 0 },
   show: {
@@ -161,7 +174,7 @@ const SlidesGuidePage: React.FC = () => {
           string,
           { isUnlocked: boolean; isMastered: boolean }
         > = {};
-        (data.topic_statuses || []).forEach((status: any) => {
+        (data.topic_statuses || []).forEach((status: TopicStatus) => {
           if (status.topic_title) {
             topicStatus[status.topic_title] = {
               isUnlocked: status.is_unlocked,
@@ -175,7 +188,7 @@ const SlidesGuidePage: React.FC = () => {
         const lockStatus: Record<string, boolean> = {};
         const prereqStatus: Record<string, string[]> = {};
 
-        (data.test_statuses || []).forEach((status: any) => {
+        (data.test_statuses || []).forEach((status: TestStatus) => {
           if (status.test_id) {
             lockStatus[status.test_id] = !status.is_unlocked;
             prereqStatus[status.test_id] = status.prerequisites || [];

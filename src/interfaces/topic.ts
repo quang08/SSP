@@ -2,6 +2,8 @@
  * Copyright (c) 2025 SSP Team (Peyton, Alex, Jackson, Yousif)
  */
 
+import { GuideAnalytics } from './test';
+
 export interface Topic {
   id: number;
   title: string;
@@ -147,7 +149,7 @@ export interface ConsolidatedGuidesResponse {
     title: string;
   }[];
   slides_guides: SlidesGuideListItem[];
-  guide_analytics: any[]; // Using 'any' for flexibility with the analytics data structure
+  guide_analytics: GuideAnalytics[];
   regular_guide_tests: {
     [title: string]: PracticeTest[];
   };

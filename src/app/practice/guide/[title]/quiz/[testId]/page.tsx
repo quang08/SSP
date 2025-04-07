@@ -210,6 +210,8 @@ interface QuizChoice {
 interface ShortAnswer {
   question: string;
   ideal_answer: string;
+  source_page?: number;
+  source_text?: string;
 }
 
 interface SectionQuiz {
@@ -354,7 +356,7 @@ const QuizPage: React.FC = () => {
     let shortAnswer: ShortAnswerQuestion[] = [];
 
     if (quiz.short_answer) {
-      shortAnswer = quiz.short_answer.map((q: any, i: number) => ({
+      shortAnswer = quiz.short_answer.map((q: ShortAnswer, i: number) => ({
         question_id: `sa_${i}`,
         question: q.question,
         ideal_answer: q.ideal_answer,

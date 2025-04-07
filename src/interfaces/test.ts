@@ -332,7 +332,7 @@ export interface DashboardDataResponse {
     average_accuracy: number;
     recent_wrong_questions: WrongQuestion[];
     weekly_progress: WeeklyProgress[];
-    latest_test: any; // Using any for flexibility
+    latest_test: LatestTest | null;
   };
   guide_analytics: GuideAnalytics[];
   study_guides: Array<{

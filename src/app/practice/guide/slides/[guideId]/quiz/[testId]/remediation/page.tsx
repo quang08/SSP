@@ -204,9 +204,9 @@ const RemediationPage: React.FC = () => {
                   </h2>
                 </div>
                 <p className="text-blue-700 mb-2">
-                  After reviewing this material, you'll be able to retry the
-                  test. Try to understand the concepts clearly before your next
-                  attempt.
+                  After reviewing this material, you&rsquo;ll be able to retry
+                  the test. Try to understand the concepts clearly before your
+                  next attempt.
                 </p>
                 <p className="text-sm text-blue-600 mb-4">
                   <span className="font-medium">Required for mastery:</span>{' '}

@@ -476,3 +476,96 @@ To optimize performance and reduce the number of API calls, the following consol
 3. **Better User Experience**: Faster rendering of components and less waiting time
 4. **Reduced Server Load**: Fewer database queries and processing on the backend
 5. **Simplified Frontend Code**: Cleaner code with less state management for multiple requests
+
+## New Findings and Additional Improvements 
+
+### Updated Assessment of Optimized Pages
+
+#### 1. practice/page.tsx - Optimization Success
+The consolidated endpoint `ENDPOINTS.allGuidesWithTests(userId)` has successfully replaced multiple API calls:
+- **Before**: N+2 API calls (22+ API calls for 10 guides)
+- **After**: 1 consolidated API call
+- **Result**: ~95% reduction in API calls for this page
+
+This implementation shows excellent performance improvement. No further action required.
+
+#### 2. dashboard/page.tsx - Smart Polling Implementation
+Recent changes have improved the polling behavior for the dashboard:
+```typescript
+{
+  refreshInterval: isUserActive ? 60000 : 0, // Only poll when user is active
+  revalidateOnFocus: isUserActive, // Only revalidate on focus if user is active
+  dedupingInterval: 10000, // Avoid duplicated requests within 10 seconds
+}
+```
+**Improvements**:
+- Added user activity detection to pause polling when inactive
+- Added tab visibility detection to pause/resume polling
+- Implemented dedupingInterval to prevent duplicate requests
+- Centralized user data fetching with `useUser()` hook
+
+**Remaining opportunities**:
+- Consider implementing a WebSocket connection for real-time updates instead of polling
+- Further reduce polling frequency on low-bandwidth connections
+
+#### 3. practice/guide/[title]/quiz/[testId]/results/page.tsx - SWR Implementation
+The quiz results page has been optimized with:
+- Consolidated endpoint with `ENDPOINTS.quizResultsWithData`
+- SWR for caching and revalidation
+- Better error handling and retry capabilities
+- Improved UI with loading states and retry button
+
+This is a significant improvement, with no further action immediately required.
+
+### New Optimization Opportunities
+
+#### 1. Global State Management for Common Data
+Several pages fetch similar data (e.g., user information, guide lists). Consider implementing:
+- **Context API or Redux**: For sharing common data between routes
+- **Persistent Cache**: SWR's cache is reset on page refresh, consider persistent caching for frequently accessed data
+- **Prefetching**: Use `<Link prefetch>` with custom logic to preload data for likely navigation paths
+
+#### 2. Optimistic UI Updates
+For actions like marking remediation as viewed or submitting tests:
+- Implement optimistic UI updates (update UI before server confirmation)
+- Cache invalidation strategies to refresh related data after mutations
+- Better error recovery when optimistic updates fail
+
+#### 3. Network Status Handling
+Add adaptive behavior based on network conditions:
+- Reduce polling frequency on slow connections
+- Implement offline mode capabilities for content viewing
+- Include "stale-while-revalidate" patterns more consistently
+
+#### 4. Rate Limiting and Request Batching
+For remaining endpoints that may generate multiple calls:
+- Add client-side debouncing for rapidly triggered API calls
+- Batch multiple related requests into a single transaction when possible
+- Implement retry with exponential backoff for failed requests
+
+#### 5. Lazy Loading and Progressive Loading
+For content-heavy pages:
+- Implement virtualization for long lists (only render visible items)
+- Progressively load content as the user scrolls
+- Defer loading non-critical assets and data
+
+## Implementation Priorities
+
+Based on impact vs. effort, here are the recommended priorities:
+
+1. **High Impact, Low Effort**:
+   - Complete SWR implementation across all pages
+   - Add network status detection and adaptive behavior
+   - Implement persistent caching for frequently accessed data
+
+2. **High Impact, Medium Effort**:
+   - Create a global state management system
+   - Add optimistic UI updates for common actions
+   - Implement prefetching strategies for likely navigation paths
+
+3. **Medium Impact, Variable Effort**:
+   - Replace polling with WebSockets where real-time updates are needed
+   - Add lazy loading and virtualization for long lists
+   - Implement offline mode capabilities
+
+The most immediate focus should be ensuring consistent SWR implementation with proper configuration across all remaining pages.
