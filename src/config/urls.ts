@@ -8,11 +8,40 @@ export const ENDPOINTS = {
   slidesGuides: `${API_URL}/api/study-guide/slides`,
   slidesGuide: (guideId: string) =>
     `${API_URL}/api/study-guide/slides/${encodeURIComponent(guideId)}`,
+  slidesGuideWithData: (guideId: string, userId: string) =>
+    `${API_URL}/api/study-guide/slides-guide-with-data/${encodeURIComponent(guideId)}/${encodeURIComponent(userId)}`,
   slidesPracticeTests: (guideId: string) =>
     `${API_URL}/api/study-guide/practice/guide/slides/${encodeURIComponent(guideId)}`,
   generateSlidesPracticeTests: `${API_URL}/api/study-guide/slides/generate-practices`,
   allGuidesWithTests: (userId: string) =>
     `${API_URL}/api/study-guide/all-with-tests/${encodeURIComponent(userId)}`,
+  dashboardData: (
+    userId: string,
+    options?: {
+      startDate?: string;
+      endDate?: string;
+      includeOngoing?: boolean;
+      aggregateBy?: 'day' | 'week' | 'month';
+      includeAnonymous?: boolean;
+    }
+  ) => {
+    let url = `${API_URL}/api/user/dashboard-data/${encodeURIComponent(userId)}`;
+    const params = new URLSearchParams();
+
+    if (options?.startDate) params.append('start_date', options.startDate);
+    if (options?.endDate) params.append('end_date', options.endDate);
+    if (options?.includeOngoing !== undefined)
+      params.append('include_ongoing', options.includeOngoing.toString());
+    if (options?.aggregateBy)
+      params.append('aggregate_by', options.aggregateBy);
+    if (options?.includeAnonymous !== undefined)
+      params.append('include_anonymous', options.includeAnonymous.toString());
+
+    const paramString = params.toString();
+    if (paramString) url += `?${paramString}`;
+
+    return url;
+  },
   studyHours: (userId: string) =>
     `${API_URL}/api/user/study-hours/${encodeURIComponent(userId)}`,
   enhancedStudyHours: (

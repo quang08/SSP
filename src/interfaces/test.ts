@@ -321,3 +321,22 @@ export interface ProcessedGuide {
 export interface GroupedMasteryData {
   [guideId: string]: ProcessedGuide;
 }
+
+export interface DashboardDataResponse {
+  topic_mastery: RawTopicMasteryResponse;
+  study_hours: EnhancedStudyHours;
+  test_analytics: {
+    user_id: string;
+    total_tests: number;
+    average_score: number;
+    average_accuracy: number;
+    recent_wrong_questions: WrongQuestion[];
+    weekly_progress: WeeklyProgress[];
+    latest_test: any; // Using any for flexibility
+  };
+  guide_analytics: GuideAnalytics[];
+  study_guides: Array<{
+    study_guide_id: string;
+    title: string;
+  }>;
+}

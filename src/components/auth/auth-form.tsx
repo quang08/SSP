@@ -7,6 +7,7 @@ import { ENDPOINTS, API_URL } from '@/config/urls';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { endActiveSession } from '@/utils/session-management';
+import { getUser } from '@/utils/supabase/get-user';
 
 // Get the base URL from environment variable or fallback to window.location.origin
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
@@ -102,8 +103,9 @@ export function AuthForm({ method, onSuccess }: AuthFormProps) {
       const token = (await supabase.auth.getSession()).data.session
         ?.access_token;
       if (token) {
-        const { data: userData } = await supabase.auth.getUser();
-        const userId = userData?.user?.id;
+        // Use our centralized getUser function instead of direct API call
+        const userData = await getUser();
+        const userId = userData?.id;
 
         if (!userId) {
           console.error('Failed to get user ID from Supabase');
@@ -148,7 +150,7 @@ export function AuthForm({ method, onSuccess }: AuthFormProps) {
           try {
             console.log('AUTH FLOW: Creating user with data:', {
               supabase_id: userId,
-              email: userData?.user?.email,
+              email: userData?.email,
               username: finalUsername,
             });
 
@@ -160,10 +162,10 @@ export function AuthForm({ method, onSuccess }: AuthFormProps) {
               },
               body: JSON.stringify({
                 supabase_id: userId,
-                email: userData?.user?.email,
+                email: userData?.email,
                 username: finalUsername,
                 name: '',
-                created_at: userData?.user?.created_at,
+                created_at: userData?.created_at,
               }),
             });
 

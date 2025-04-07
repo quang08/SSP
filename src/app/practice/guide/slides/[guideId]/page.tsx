@@ -116,46 +116,85 @@ const SlidesGuidePage: React.FC = () => {
   const [topicMasteryStatus, setTopicMasteryStatus] = useState<
     Record<string, { isUnlocked: boolean; isMastered: boolean }>
   >({});
+  const [userId, setUserId] = useState<string | null>(null);
 
-  const { data: slidesGuide, error: slidesError } = useSWR<SlidesGuide>(
-    guideId ? ENDPOINTS.slidesGuide(guideId) : null,
-    fetcher
-  );
+  // Get the user ID from Supabase
+  useEffect(() => {
+    const fetchUserId = async () => {
+      try {
+        const userData = await supabase.auth.getUser();
+        setUserId(userData.data?.user?.id || null);
+      } catch (error) {
+        console.error('Error fetching user data:', error);
+      }
+    };
+
+    fetchUserId();
+  }, []);
 
   const supabase = createClient();
 
-  // Add a refreshData function to update completed tests data
-  const refreshData = async () => {
-    try {
-      // Fetch latest completed tests data
-      const userData = await supabase.auth.getUser();
-      const userId = userData.data?.user?.id;
+  // Use the consolidated endpoint for fetching all data
+  const {
+    data: consolidatedData,
+    error: consolidatedError,
+    mutate: refreshConsolidatedData,
+  } = useSWR(
+    guideId && userId ? ENDPOINTS.slidesGuideWithData(guideId, userId) : null,
+    fetcher,
+    {
+      revalidateOnFocus: false,
+      dedupingInterval: 10000, // 10 seconds
+      onSuccess: (data) => {
+        // Process the consolidated data
+        // 1. Set slides guide data
+        const guide = data.guide;
 
-      if (userId) {
-        const token = await supabase.auth
-          .getSession()
-          .then((res) => res.data.session?.access_token);
+        // 2. Set practice tests
+        setPracticeTests(data.practice_tests || []);
 
-        const completedTestsResponse = await fetch(
-          ENDPOINTS.testResults(userId),
-          {
-            headers: { Authorization: `Bearer ${token}` },
+        // 3. Set completed tests
+        setCompletedTests(new Set(data.completed_tests || []));
+
+        // 4. Set topic mastery status
+        const topicStatus: Record<
+          string,
+          { isUnlocked: boolean; isMastered: boolean }
+        > = {};
+        (data.topic_statuses || []).forEach((status: any) => {
+          if (status.topic_title) {
+            topicStatus[status.topic_title] = {
+              isUnlocked: status.is_unlocked,
+              isMastered: status.is_mastered,
+            };
           }
-        );
+        });
+        setTopicMasteryStatus(topicStatus);
 
-        if (completedTestsResponse.ok) {
-          const completedTestsData = await completedTestsResponse.json();
-          const completed = new Set(
-            completedTestsData.test_results
-              ?.filter((test: CompletedTest) => test.study_guide_id === guideId)
-              .map((test: CompletedTest) => test.test_id) || []
-          ) as Set<string>;
-          setCompletedTests(completed);
-        }
-      }
-    } catch (error) {
-      console.error('Error refreshing test completion data:', error);
+        // 5. Set test lock status
+        const lockStatus: Record<string, boolean> = {};
+        const prereqStatus: Record<string, string[]> = {};
+
+        (data.test_statuses || []).forEach((status: any) => {
+          if (status.test_id) {
+            lockStatus[status.test_id] = !status.is_unlocked;
+            prereqStatus[status.test_id] = status.prerequisites || [];
+          }
+        });
+
+        setLockedTests(lockStatus);
+        setTestPrerequisites(prereqStatus);
+      },
     }
+  );
+
+  // Extract the slides guide from the consolidated data
+  const slidesGuide = consolidatedData?.guide;
+  const slidesError = consolidatedError;
+
+  // Refresh data function now uses the SWR mutate
+  const refreshData = () => {
+    refreshConsolidatedData();
   };
 
   // Add effect to refresh data when component is focused
@@ -166,73 +205,11 @@ const SlidesGuidePage: React.FC = () => {
     };
 
     window.addEventListener('focus', handleFocus);
-    // Initial refresh
-    refreshData();
 
     return () => {
       window.removeEventListener('focus', handleFocus);
     };
   }, []);
-
-  useEffect(() => {
-    // Fetch practice tests when the guide is loaded
-    const fetchPracticeTests = async () => {
-      if (slidesGuide) {
-        try {
-          // Check if practice tests exist
-          const token = await supabase.auth
-            .getSession()
-            .then((res) => res.data.session?.access_token);
-
-          const response = await fetch(ENDPOINTS.slidesPracticeTests(guideId), {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-
-          if (response.ok) {
-            const data = await response.json();
-            if (data && data.practice_tests && data.practice_tests.length > 0) {
-              setPracticeTests(data.practice_tests as SlidePracticeTest[]);
-            } else {
-              // If no tests exist, we'll need to generate them
-              await generatePracticeTests();
-            }
-          } else {
-            // If endpoint doesn't exist or returns error, generate tests
-            await generatePracticeTests();
-          }
-
-          // Also fetch completed tests
-          const userData = await supabase.auth.getUser();
-          const userId = userData.data?.user?.id;
-
-          if (userId) {
-            const completedTestsResponse = await fetch(
-              ENDPOINTS.testResults(userId),
-              {
-                headers: { Authorization: `Bearer ${token}` },
-              }
-            );
-
-            if (completedTestsResponse.ok) {
-              const completedTestsData = await completedTestsResponse.json();
-              const completed = new Set(
-                completedTestsData.test_results
-                  ?.filter(
-                    (test: CompletedTest) => test.study_guide_id === guideId
-                  )
-                  .map((test: CompletedTest) => test.test_id) || []
-              ) as Set<string>;
-              setCompletedTests(completed);
-            }
-          }
-        } catch (error) {
-          console.error('Error fetching practice tests:', error);
-        }
-      }
-    };
-
-    fetchPracticeTests();
-  }, [guideId, slidesGuide]);
 
   const generatePracticeTests = async () => {
     try {
@@ -270,6 +247,9 @@ const SlidesGuidePage: React.FC = () => {
               `Found ${shortAnswerCount} short answer questions across all tests`
             );
           }
+
+          // Refresh all data to get updated statuses
+          refreshData();
         }
       }
     } catch (error) {
@@ -279,39 +259,8 @@ const SlidesGuidePage: React.FC = () => {
     }
   };
 
-  // Add this function to check test prerequisites
-  const checkTestPrerequisites = async (
-    testId: string,
-    topicTitle: string
-  ): Promise<boolean> => {
-    try {
-      const userData = await supabase.auth.getUser();
-      const userId = userData.data?.user?.id;
-
-      if (userId && guideId && topicTitle) {
-        const token = await supabase.auth
-          .getSession()
-          .then((res) => res.data.session?.access_token);
-
-        const response = await fetch(
-          ENDPOINTS.testStatus(userId, guideId, topicTitle, testId),
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-
-        if (response.ok) {
-          const data = await response.json();
-          return data.is_unlocked;
-        }
-      }
-      return false;
-    } catch (error) {
-      console.error('Error checking test prerequisites:', error);
-      return false;
-    }
-  };
-
+  // Remove the old functions that made separate API calls
+  // checkTestPrerequisites is no longer needed as we get this data from the consolidated endpoint
   const handleQuizClick = async (
     testId: string,
     topicTitle: string
@@ -324,8 +273,8 @@ const SlidesGuidePage: React.FC = () => {
       return;
     }
 
-    // Check if the test is unlocked based on prerequisites
-    const isUnlocked = await checkTestPrerequisites(testId, topicTitle);
+    // Check if the test is unlocked based on our state from the consolidated endpoint
+    const isUnlocked = !lockedTests[testId];
 
     if (!isUnlocked) {
       // Show a toast notification instead of an alert
@@ -367,106 +316,6 @@ const SlidesGuidePage: React.FC = () => {
     // Only return the first test for each topic
     return topicTests.length > 0 ? [topicTests[0]] : [];
   };
-
-  // Add this function to check topic prerequisites mastery status
-  const checkTopicPrerequisites = async (topicTitle: string) => {
-    try {
-      const userData = await supabase.auth.getUser();
-      const userId = userData.data?.user?.id;
-
-      if (userId && guideId) {
-        const token = await supabase.auth
-          .getSession()
-          .then((res) => res.data.session?.access_token);
-
-        const response = await fetch(
-          ENDPOINTS.topicStatus(userId, guideId, topicTitle),
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-
-        if (response.ok) {
-          const data = await response.json();
-          setTopicMasteryStatus((prev) => ({
-            ...prev,
-            [topicTitle]: {
-              isUnlocked: data.is_unlocked,
-              isMastered: data.is_mastered,
-            },
-          }));
-          return data;
-        }
-      }
-    } catch (error) {
-      console.error('Error checking topic prerequisites:', error);
-    }
-    return null;
-  };
-
-  // Add this useEffect to check prerequisites for all topics when they load
-  useEffect(() => {
-    if (slidesGuide?.topics) {
-      slidesGuide.topics.forEach((topic: SlideTopic) => {
-        // Check if topic has prerequisites and if they exist
-        const prerequisites = topic.topic_prerequisites || [];
-        if (prerequisites.length > 0) {
-          checkTopicPrerequisites(topic.title);
-        }
-      });
-    }
-  }, [slidesGuide]);
-
-  // Use this to check locked status when tests load
-  useEffect(() => {
-    const checkTestLockStatus = async () => {
-      if (!slidesGuide?.topics || practiceTests.length === 0) return;
-
-      const newLockedStatus: Record<string, boolean> = {};
-      const newPrerequisitesStatus: Record<string, string[]> = {};
-
-      for (const topic of slidesGuide.topics) {
-        const topicTests = getTestsByTopic(topic.title);
-
-        for (const test of topicTests) {
-          try {
-            const userData = await supabase.auth.getUser();
-            const userId = userData.data?.user?.id;
-
-            if (userId && guideId && topic.title) {
-              const token = await supabase.auth
-                .getSession()
-                .then((res) => res.data.session?.access_token);
-
-              const response = await fetch(
-                ENDPOINTS.testStatus(
-                  userId,
-                  guideId,
-                  topic.title,
-                  test.practice_test_id
-                ),
-                { headers: { Authorization: `Bearer ${token}` } }
-              );
-
-              if (response.ok) {
-                const data = await response.json();
-                newLockedStatus[test.practice_test_id] = !data.is_unlocked;
-                newPrerequisitesStatus[test.practice_test_id] =
-                  data.prerequisites || [];
-              }
-            }
-          } catch (error) {
-            console.error('Error checking test lock status:', error);
-          }
-        }
-      }
-
-      setLockedTests(newLockedStatus);
-      setTestPrerequisites(newPrerequisitesStatus);
-    };
-
-    checkTestLockStatus();
-  }, [practiceTests, slidesGuide]);
 
   const renderTopic = (topic: Topic & SlideTopic) => {
     // Safe check for prerequisites
@@ -740,192 +589,195 @@ const SlidesGuidePage: React.FC = () => {
 
                         <AccordionContent className="px-6 pb-6 pt-2">
                           <div className="space-y-3">
-                            {slidesGuide.topics.map((topic, topicIndex) => (
-                              <motion.div key={topicIndex} variants={item}>
-                                <AccordionItem
-                                  value={`topic-${topicIndex}`}
-                                  className="border-2 border-gray-300 rounded-lg overflow-hidden hover:border-blue-300 transition-all duration-300 data-[state=open]:shadow-md data-[state=open]:border-blue-300"
-                                >
-                                  <AccordionTrigger className="px-4 py-3 hover:no-underline transition-colors">
-                                    <div className="flex items-center gap-3">
-                                      <div
-                                        className={cn(
-                                          'p-1.5 rounded-lg',
-                                          getTestsByTopic(topic.title).some(
+                            {slidesGuide.topics.map(
+                              (topic: SlideTopic, topicIndex: number) => (
+                                <motion.div key={topicIndex} variants={item}>
+                                  <AccordionItem
+                                    value={`topic-${topicIndex}`}
+                                    className="border-2 border-gray-300 rounded-lg overflow-hidden hover:border-blue-300 transition-all duration-300 data-[state=open]:shadow-md data-[state=open]:border-blue-300"
+                                  >
+                                    <AccordionTrigger className="px-4 py-3 hover:no-underline transition-colors">
+                                      <div className="flex items-center gap-3">
+                                        <div
+                                          className={cn(
+                                            'p-1.5 rounded-lg',
+                                            getTestsByTopic(topic.title).some(
+                                              (test) =>
+                                                completedTests.has(
+                                                  test.practice_test_id
+                                                )
+                                            )
+                                              ? 'bg-green-100'
+                                              : 'bg-blue-100'
+                                          )}
+                                        >
+                                          {getTestsByTopic(topic.title).some(
                                             (test) =>
                                               completedTests.has(
                                                 test.practice_test_id
                                               )
-                                          )
-                                            ? 'bg-green-100'
-                                            : 'bg-blue-100'
-                                        )}
-                                      >
-                                        {getTestsByTopic(topic.title).some(
-                                          (test) =>
-                                            completedTests.has(
-                                              test.practice_test_id
-                                            )
-                                        ) ? (
-                                          <CheckCircle className="h-4 w-4 text-green-600" />
-                                        ) : (
-                                          <PlayCircle className="h-4 w-4 text-blue-600" />
-                                        )}
+                                          ) ? (
+                                            <CheckCircle className="h-4 w-4 text-green-600" />
+                                          ) : (
+                                            <PlayCircle className="h-4 w-4 text-blue-600" />
+                                          )}
+                                        </div>
+                                        <span className="text-left font-medium text-gray-800">
+                                          {topic.title}
+                                        </span>
                                       </div>
-                                      <span className="text-left font-medium text-gray-800">
-                                        {topic.title}
-                                      </span>
-                                    </div>
-                                  </AccordionTrigger>
+                                    </AccordionTrigger>
 
-                                  <AccordionContent className="px-4 pb-4 pt-1">
-                                    <div className="space-y-2.5">
-                                      {renderTopic(topic)}
+                                    <AccordionContent className="px-4 pb-4 pt-1">
+                                      <div className="space-y-2.5">
+                                        {renderTopic(topic)}
 
-                                      {/* Display practice tests for this topic */}
-                                      {getTestsByTopic(topic.title).length >
-                                        0 && (
-                                        <div className="mt-4 pt-4 border-t border-gray-200">
-                                          <h4 className="font-medium text-gray-900 mb-3">
-                                            Practice Tests
-                                          </h4>
-                                          <div className="space-y-2">
-                                            {getTestsByTopic(topic.title).map(
-                                              (
-                                                test: SlidePracticeTest,
-                                                testIndex: number
-                                              ) => (
-                                                <div
-                                                  key={testIndex}
-                                                  id={`test-${test.practice_test_id}`}
-                                                  className={cn(
-                                                    'rounded-lg border p-3 transition-all',
-                                                    lockedTests[
-                                                      test.practice_test_id
-                                                    ]
-                                                      ? 'border-gray-300 bg-gray-50 cursor-not-allowed'
-                                                      : 'border-gray-200 hover:border-blue-300 cursor-pointer'
-                                                  )}
-                                                  onClick={() =>
-                                                    handleQuizClick(
-                                                      test.practice_test_id,
-                                                      topic.title
-                                                    )
-                                                  }
-                                                >
-                                                  <div className="flex items-center justify-between">
-                                                    <div className="flex items-center gap-2">
-                                                      {completedTests.has(
+                                        {/* Display practice tests for this topic */}
+                                        {getTestsByTopic(topic.title).length >
+                                          0 && (
+                                          <div className="mt-4 pt-4 border-t border-gray-200">
+                                            <h4 className="font-medium text-gray-900 mb-3">
+                                              Practice Tests
+                                            </h4>
+                                            <div className="space-y-2">
+                                              {getTestsByTopic(topic.title).map(
+                                                (
+                                                  test: SlidePracticeTest,
+                                                  testIndex: number
+                                                ) => (
+                                                  <div
+                                                    key={testIndex}
+                                                    id={`test-${test.practice_test_id}`}
+                                                    className={cn(
+                                                      'rounded-lg border p-3 transition-all',
+                                                      lockedTests[
                                                         test.practice_test_id
-                                                      ) ? (
-                                                        <CheckCircle className="h-4 w-4 text-green-500" />
-                                                      ) : lockedTests[
-                                                          test.practice_test_id
-                                                        ] ? (
-                                                        <TooltipProvider>
-                                                          <Tooltip>
-                                                            <TooltipTrigger>
-                                                              <LockIcon className="h-4 w-4 text-gray-500" />
-                                                            </TooltipTrigger>
-                                                            <TooltipContent className="w-64 p-3">
-                                                              <p className="font-medium text-sm mb-2">
-                                                                Required
-                                                                Prerequisites:
-                                                              </p>
-                                                              <ul className="list-disc list-inside space-y-1 text-xs">
-                                                                {testPrerequisites[
-                                                                  test
-                                                                    .practice_test_id
-                                                                ]?.map(
-                                                                  (
-                                                                    prereq,
-                                                                    i
-                                                                  ) => (
-                                                                    <li
-                                                                      key={i}
-                                                                      className="text-gray-700"
-                                                                    >
-                                                                      {prereq}
-                                                                      {topicMasteryStatus[
-                                                                        prereq
-                                                                      ] && (
-                                                                        <span
-                                                                          className={`ml-1 text-xs ${topicMasteryStatus[prereq].isMastered ? 'text-green-600' : 'text-amber-600'}`}
-                                                                        >
-                                                                          (
-                                                                          {topicMasteryStatus[
-                                                                            prereq
-                                                                          ]
-                                                                            .isMastered
-                                                                            ? 'Mastered'
-                                                                            : 'Not Mastered'}
-                                                                          )
-                                                                        </span>
-                                                                      )}
-                                                                    </li>
-                                                                  )
-                                                                )}
-                                                              </ul>
-                                                            </TooltipContent>
-                                                          </Tooltip>
-                                                        </TooltipProvider>
-                                                      ) : (
-                                                        <PlayCircle className="h-4 w-4 text-blue-500" />
-                                                      )}
-                                                      <span
-                                                        className={cn(
-                                                          'font-medium text-sm',
-                                                          lockedTests[
-                                                            test
-                                                              .practice_test_id
-                                                          ] && 'text-gray-500'
-                                                        )}
-                                                      >
+                                                      ]
+                                                        ? 'border-gray-300 bg-gray-50 cursor-not-allowed'
+                                                        : 'border-gray-200 hover:border-blue-300 cursor-pointer'
+                                                    )}
+                                                    onClick={() =>
+                                                      handleQuizClick(
+                                                        test.practice_test_id,
+                                                        topic.title
+                                                      )
+                                                    }
+                                                  >
+                                                    <div className="flex items-center justify-between">
+                                                      <div className="flex items-center gap-2">
                                                         {completedTests.has(
                                                           test.practice_test_id
-                                                        )
-                                                          ? 'View Results'
-                                                          : lockedTests[
-                                                                test
-                                                                  .practice_test_id
-                                                              ]
-                                                            ? 'Locked (Prerequisites Required)'
-                                                            : 'Take Quiz'}
+                                                        ) ? (
+                                                          <CheckCircle className="h-4 w-4 text-green-500" />
+                                                        ) : lockedTests[
+                                                            test
+                                                              .practice_test_id
+                                                          ] ? (
+                                                          <TooltipProvider>
+                                                            <Tooltip>
+                                                              <TooltipTrigger>
+                                                                <LockIcon className="h-4 w-4 text-gray-500" />
+                                                              </TooltipTrigger>
+                                                              <TooltipContent className="w-64 p-3">
+                                                                <p className="font-medium text-sm mb-2">
+                                                                  Required
+                                                                  Prerequisites:
+                                                                </p>
+                                                                <ul className="list-disc list-inside space-y-1 text-xs">
+                                                                  {testPrerequisites[
+                                                                    test
+                                                                      .practice_test_id
+                                                                  ]?.map(
+                                                                    (
+                                                                      prereq,
+                                                                      i
+                                                                    ) => (
+                                                                      <li
+                                                                        key={i}
+                                                                        className="text-gray-700"
+                                                                      >
+                                                                        {prereq}
+                                                                        {topicMasteryStatus[
+                                                                          prereq
+                                                                        ] && (
+                                                                          <span
+                                                                            className={`ml-1 text-xs ${topicMasteryStatus[prereq].isMastered ? 'text-green-600' : 'text-amber-600'}`}
+                                                                          >
+                                                                            (
+                                                                            {topicMasteryStatus[
+                                                                              prereq
+                                                                            ]
+                                                                              .isMastered
+                                                                              ? 'Mastered'
+                                                                              : 'Not Mastered'}
+                                                                            )
+                                                                          </span>
+                                                                        )}
+                                                                      </li>
+                                                                    )
+                                                                  )}
+                                                                </ul>
+                                                              </TooltipContent>
+                                                            </Tooltip>
+                                                          </TooltipProvider>
+                                                        ) : (
+                                                          <PlayCircle className="h-4 w-4 text-blue-500" />
+                                                        )}
+                                                        <span
+                                                          className={cn(
+                                                            'font-medium text-sm',
+                                                            lockedTests[
+                                                              test
+                                                                .practice_test_id
+                                                            ] && 'text-gray-500'
+                                                          )}
+                                                        >
+                                                          {completedTests.has(
+                                                            test.practice_test_id
+                                                          )
+                                                            ? 'View Results'
+                                                            : lockedTests[
+                                                                  test
+                                                                    .practice_test_id
+                                                                ]
+                                                              ? 'Locked (Prerequisites Required)'
+                                                              : 'Take Quiz'}
+                                                        </span>
+                                                      </div>
+                                                      <span className="text-xs text-gray-500">
+                                                        {(test.questions
+                                                          .length || 0) +
+                                                          (test.short_answer
+                                                            ?.length || 0)}{' '}
+                                                        questions
                                                       </span>
                                                     </div>
-                                                    <span className="text-xs text-gray-500">
-                                                      {(test.questions.length ||
-                                                        0) +
-                                                        (test.short_answer
-                                                          ?.length || 0)}{' '}
-                                                      questions
-                                                    </span>
                                                   </div>
-                                                </div>
-                                              )
-                                            )}
-                                          </div>
-                                        </div>
-                                      )}
-
-                                      {/* If no tests exist for this topic, show generate button */}
-                                      {getTestsByTopic(topic.title).length ===
-                                        0 &&
-                                        !generatingTests && (
-                                          <div className="mt-4 pt-4 border-t border-gray-200">
-                                            <Button
-                                              onClick={generatePracticeTests}
-                                              className="w-full bg-blue-500 hover:bg-blue-600 text-white"
-                                            >
-                                              Generate Practice Tests
-                                            </Button>
+                                                )
+                                              )}
+                                            </div>
                                           </div>
                                         )}
-                                    </div>
-                                  </AccordionContent>
-                                </AccordionItem>
-                              </motion.div>
-                            ))}
+
+                                        {/* If no tests exist for this topic, show generate button */}
+                                        {getTestsByTopic(topic.title).length ===
+                                          0 &&
+                                          !generatingTests && (
+                                            <div className="mt-4 pt-4 border-t border-gray-200">
+                                              <Button
+                                                onClick={generatePracticeTests}
+                                                className="w-full bg-blue-500 hover:bg-blue-600 text-white"
+                                              >
+                                                Generate Practice Tests
+                                              </Button>
+                                            </div>
+                                          )}
+                                      </div>
+                                    </AccordionContent>
+                                  </AccordionItem>
+                                </motion.div>
+                              )
+                            )}
                           </div>
                         </AccordionContent>
                       </AccordionItem>

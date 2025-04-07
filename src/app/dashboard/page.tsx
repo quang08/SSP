@@ -60,6 +60,7 @@ import { initSessionActivity } from '@/utils/session-management';
 import { MathJax, MathJaxContext } from 'better-react-mathjax';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
+import { useUser } from '@/utils/supabase/get-user';
 
 // MathJax configuration
 const mathJaxConfig = {
@@ -189,101 +190,116 @@ export default function DashboardPage() {
   );
   const [isClaimingAnonymousSessions, setIsClaimingAnonymousSessions] =
     useState(false);
+  const [isUserActive, setIsUserActive] = useState(true);
+  const [lastActivity, setLastActivity] = useState(Date.now());
+  const INACTIVITY_THRESHOLD = 5 * 60 * 1000; // 5 minutes
 
-  // Fetch user data FIRST
-  const { data: userData, error: userError } = useSWR('user', async () => {
-    const { data } = await supabase.auth.getUser();
-    return data?.user;
-  });
+  // Replace the direct SWR call with our useUser hook
+  const {
+    user: userData,
+    isLoading: userLoading,
+    error: userError,
+  } = useUser();
 
   const userId = userData?.id; // Declare userId AFTER fetching userData
 
-  // Fetch Topic Mastery Data (Now userId is available)
-  const { data: rawMasteryData, error: masteryError } =
-    useSWR<RawTopicMasteryResponse>(
-      userId ? ENDPOINTS.topicMastery(userId) : null,
-      fetcher
-    );
+  // Track user activity
+  useEffect(() => {
+    const updateActivity = () => {
+      setIsUserActive(true);
+      setLastActivity(Date.now());
+    };
 
-  // Use enhanced study hours endpoint
+    // Events that indicate user activity
+    window.addEventListener('mousemove', updateActivity);
+    window.addEventListener('keydown', updateActivity);
+    window.addEventListener('click', updateActivity);
+
+    // Check if user is inactive
+    const checkInactivity = setInterval(() => {
+      if (Date.now() - lastActivity > INACTIVITY_THRESHOLD) {
+        setIsUserActive(false);
+      }
+    }, 60000);
+
+    return () => {
+      window.removeEventListener('mousemove', updateActivity);
+      window.removeEventListener('keydown', updateActivity);
+      window.removeEventListener('click', updateActivity);
+      clearInterval(checkInactivity);
+    };
+  }, [lastActivity]);
+
+  // Use the consolidated dashboard data endpoint with activity-based polling
   const {
-    data: enhancedStudyHours,
-    error: studyHoursError,
-    mutate: mutateStudyHours,
-  } = useSWR<EnhancedStudyHours>(
+    data: dashboardData,
+    error: dashboardError,
+    mutate: mutateDashboardData,
+  } = useSWR(
     userId
-      ? ENDPOINTS.enhancedStudyHours(userId, {
-          includeOngoing: true,
+      ? ENDPOINTS.dashboardData(userId, {
+          includeOngoing: false,
           aggregateBy: studyTimeView,
-          includeAnonymous: false, // Don't include anonymous sessions by default
+          includeAnonymous: false,
         })
       : null,
     fetcher,
     {
-      refreshInterval: 60000, // Refresh every minute to update ongoing session time
-      revalidateOnFocus: true, // Revalidate when tab regains focus
+      refreshInterval: isUserActive ? 60000 : 0, // Only poll when user is active
+      revalidateOnFocus: isUserActive, // Only revalidate on focus if user is active
+      dedupingInterval: 10000, // Avoid duplicated requests within 10 seconds
       onError: (err) => {
-        console.error('Error fetching study hours:', err);
+        console.error('Error fetching dashboard data:', err);
       },
     }
   );
 
-  // Add a function to check if user is new (no study hours)
-  const isNewUser = useMemo(() => {
-    if (!enhancedStudyHours) return true;
-    return (
-      enhancedStudyHours.total_hours === 0 &&
-      !enhancedStudyHours.has_ongoing_session
-    );
-  }, [enhancedStudyHours]);
-
-  const { data: testAnalytics, error: testError } = useSWR(
-    userId ? ENDPOINTS.testAnalytics(userId) : null,
-    fetcher
-  );
-
-  // Fetch all guide analytics in one request with proper logging
-  const allGuideAnalyticsUrl = userId
-    ? ENDPOINTS.allGuideAnalytics(userId)
-    : null;
-  const { data: allGuideAnalytics, error: allGuideAnalyticsError } = useSWR(
-    allGuideAnalyticsUrl,
-    fetcher
-  );
-
-  // Log the analytics data when it changes
+  // Handle page visibility changes - MOVED AFTER SWR DECLARATION
   useEffect(() => {
-    if (allGuideAnalytics) {
-      console.log('All guide analytics loaded:', allGuideAnalytics);
-    }
-    if (allGuideAnalyticsError) {
-      console.error(
-        'Error loading all guide analytics:',
-        allGuideAnalyticsError
-      );
-    }
-  }, [allGuideAnalytics, allGuideAnalyticsError]);
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        // Stop polling when tab is not visible by manually revalidating with no auto-refresh
+        if (userId) {
+          mutateDashboardData(); // Just trigger a final update
+        }
+      } else {
+        // Resume polling when tab becomes visible if user is active
+        if (isUserActive && userId) {
+          mutateDashboardData(); // Trigger an immediate update
+        }
+      }
+    };
 
-  const { data: studyGuidesResponse, error: guidesError } = useSWR(
-    ENDPOINTS.studyGuides,
-    fetcher
-  );
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [userId, isUserActive, mutateDashboardData]);
 
+  // Extract data from the consolidated response
+  const rawMasteryData = dashboardData?.topic_mastery;
+  const enhancedStudyHours = dashboardData?.study_hours;
+  const testAnalytics = dashboardData?.test_analytics;
+  const allGuideAnalytics = dashboardData
+    ? { study_guides: dashboardData.guide_analytics }
+    : null;
+  const studyGuidesResponse = dashboardData
+    ? { study_guides: dashboardData.study_guides }
+    : null;
+
+  // Convert study guides to the format expected by the rest of the component
   const studyGuides = useMemo<DashboardGuide[]>(() => {
-    if (!studyGuidesResponse?.study_guides) return [];
-
-    // First get all available guide analytics
-    const guidesWithAnalytics = allGuideAnalytics?.study_guides || [];
-    console.log('All guides with analytics:', guidesWithAnalytics);
+    if (!dashboardData?.study_guides || !dashboardData?.guide_analytics)
+      return [];
 
     // Create a map for fast lookup of analytics by guide ID
     const analyticsMap = new Map();
-    guidesWithAnalytics.forEach((guide: GuideAnalytics) => {
+    dashboardData.guide_analytics.forEach((guide: GuideAnalytics) => {
       analyticsMap.set(guide.study_guide_id, guide);
     });
 
-    // Regular guides from study_guides endpoint that also have analytics
-    const regularGuides = studyGuidesResponse.study_guides
+    // Convert study guides with analytics
+    const guides = dashboardData.study_guides
       .filter((guide: { study_guide_id: string; title: string }) =>
         analyticsMap.has(guide.study_guide_id)
       )
@@ -298,37 +314,10 @@ export default function DashboardPage() {
         };
       });
 
-    // Find guides in analytics that aren't in regular guides (these might be slides-based)
-    const additionalGuides: DashboardGuide[] = [];
+    return guides;
+  }, [dashboardData]);
 
-    guidesWithAnalytics.forEach((analytic: GuideAnalytics) => {
-      const guideId = analytic.study_guide_id;
-      const alreadyIncluded = regularGuides.some(
-        (g: DashboardGuide) => g.id === guideId
-      );
-
-      if (!alreadyIncluded) {
-        console.log(
-          `Adding guide from analytics: ${guideId} - ${analytic.study_guide_title} (${analytic.guide_type || 'unknown type'})`
-        );
-
-        additionalGuides.push({
-          id: guideId,
-          title: analytic.study_guide_title || `Guide ${guideId}`,
-          description: `Study guide with ${analytic.total_tests} test${analytic.total_tests !== 1 ? 's' : ''}`,
-          progress: analytic.average_accuracy || 0,
-          type: analytic.guide_type === 'slides' ? 'slides' : 'regular',
-        });
-      }
-    });
-
-    const allGuides = [...regularGuides, ...additionalGuides];
-    console.log(`Total guides for dashboard: ${allGuides.length}`);
-
-    return allGuides;
-  }, [studyGuidesResponse, allGuideAnalytics]);
-
-  // --- Process Mastery Data (Grouped by Guide -> Chapter -> Section) ---
+  // Process mastery data for topic mastery tab
   const groupedMasteryData = useMemo(() => {
     if (!rawMasteryData?.mastery_data?.study_guides) return {};
 
@@ -389,10 +378,14 @@ export default function DashboardPage() {
         ].sections.sort((a, b) => b.masteryScore - a.masteryScore);
       }
     }
-    console.log('Processed Grouped Mastery Data (Dashboard):', grouped);
     return grouped;
   }, [rawMasteryData, userId]);
-  // --- End Process Mastery Data ---
+
+  // Add a function to check if user is new (no study hours)
+  const isNewUser = useMemo(() => {
+    if (!enhancedStudyHours) return true;
+    return enhancedStudyHours.total_hours === 0;
+  }, [enhancedStudyHours]);
 
   const selectedGuide = studyGuides?.[selectedGuideIndex];
 
@@ -480,10 +473,17 @@ export default function DashboardPage() {
 
   // Try to match guides when allGuideAnalytics changes
   useEffect(() => {
-    if (allGuideAnalytics?.study_guides?.length > 0 && studyGuides.length > 0) {
+    // Ensure allGuideAnalytics and study_guides exist before accessing them
+    if (
+      allGuideAnalytics &&
+      allGuideAnalytics.study_guides &&
+      allGuideAnalytics.study_guides.length > 0 &&
+      studyGuides &&
+      studyGuides.length > 0
+    ) {
       console.log('Matching study guides with analytics...');
 
-      // Find a guide that has analytics data
+      // Now TypeScript knows allGuideAnalytics is not null
       const guideWithData = allGuideAnalytics.study_guides.find(
         (guide: GuideAnalytics) => guide.total_tests > 0
       );
@@ -547,13 +547,7 @@ export default function DashboardPage() {
           `Successfully claimed ${result.claimed_count} anonymous sessions!`
         );
         // After claiming, refetch with includeAnonymous=true
-        mutate(
-          ENDPOINTS.enhancedStudyHours(userId, {
-            includeOngoing: true,
-            aggregateBy: studyTimeView,
-            includeAnonymous: true,
-          })
-        );
+        mutateDashboardData();
       } else {
         toast.info(result.message || 'No anonymous sessions found to claim');
       }
@@ -563,29 +557,24 @@ export default function DashboardPage() {
     } finally {
       setIsClaimingAnonymousSessions(false);
     }
-  }, [userId, supabase, studyTimeView, isNewUser]);
+  }, [userId, supabase, mutateDashboardData, isNewUser]);
 
-  // Manually refresh study hours data when on dashboard tab
+  // Manually refresh study hours data when on dashboard tab - REPLACE THIS BLOCK
   useEffect(() => {
     // Check if session_id exists but user is logged in - this means we need to start a new session
     const hasSessionId = localStorage.getItem('session_id');
-    if (!hasSessionId && userId) {
+    const sessionStarted = { current: false }; // Use object to track if we've started a session
+
+    if (!hasSessionId && userId && !sessionStarted.current) {
       console.log(
         'No session found but user is logged in, starting new session'
       );
+      sessionStarted.current = true;
       startNewSession(userId);
     }
 
-    // Set up interval to refresh study hours
-    const interval = setInterval(() => {
-      if (enhancedStudyHours) {
-        console.log('Auto-refreshing study hours data');
-        mutateStudyHours();
-      }
-    }, 60000);
-
-    return () => clearInterval(interval);
-  }, [userId, enhancedStudyHours, mutateStudyHours]);
+    // Remove the redundant interval - SWR's refreshInterval handles this
+  }, [userId, mutateDashboardData]);
 
   // Session activity monitoring
   useEffect(() => {
@@ -632,7 +621,7 @@ export default function DashboardPage() {
         initSessionActivity();
 
         // Refresh study hours to include this new session
-        mutateStudyHours();
+        mutateDashboardData();
       } else {
         console.error(
           'Failed to start dashboard session:',
@@ -860,8 +849,7 @@ export default function DashboardPage() {
                                 Total Study Time
                               </CardTitle>
                               <div className="flex flex-col">
-                                {studyHoursError ||
-                                !enhancedStudyHours?.total_hours ? (
+                                {enhancedStudyHours?.total_hours === 0 ? (
                                   <div className="space-y-2">
                                     <p className="text-gray-600">
                                       {Messages.NO_STUDY_HOURS}
@@ -895,19 +883,6 @@ export default function DashboardPage() {
                                         hours total
                                       </span>
                                     </div>
-
-                                    {enhancedStudyHours.has_ongoing_session && (
-                                      <div className="mt-2 text-sm flex items-center text-green-600">
-                                        <Activity className="h-4 w-4 mr-1" />
-                                        <span>
-                                          Ongoing:{' '}
-                                          {enhancedStudyHours.ongoing_hours.toFixed(
-                                            2
-                                          )}{' '}
-                                          hours
-                                        </span>
-                                      </div>
-                                    )}
                                   </>
                                 )}
                               </div>
@@ -925,11 +900,7 @@ export default function DashboardPage() {
                                 Average Score
                               </CardTitle>
                               <div className="flex items-baseline">
-                                {testError || !testAnalytics?.average_score ? (
-                                  <p className="text-gray-600">
-                                    {Messages.NO_TEST_DATA}
-                                  </p>
-                                ) : (
+                                {testAnalytics?.average_score ? (
                                   <>
                                     <span className="text-4xl font-bold text-gray-900">
                                       {testAnalytics.average_score.toFixed(2)}
@@ -938,6 +909,10 @@ export default function DashboardPage() {
                                       points
                                     </span>
                                   </>
+                                ) : (
+                                  <p className="text-gray-600">
+                                    {Messages.NO_TEST_DATA}
+                                  </p>
                                 )}
                               </div>
                             </CardContent>
@@ -954,11 +929,7 @@ export default function DashboardPage() {
                                 Tests Taken
                               </CardTitle>
                               <div className="flex items-baseline">
-                                {testError || !testAnalytics?.total_tests ? (
-                                  <p className="text-gray-600">
-                                    {Messages.NO_TEST_DATA}
-                                  </p>
-                                ) : (
+                                {testAnalytics?.total_tests ? (
                                   <>
                                     <span className="text-4xl font-bold text-gray-900">
                                       {testAnalytics.total_tests}
@@ -967,6 +938,10 @@ export default function DashboardPage() {
                                       total
                                     </span>
                                   </>
+                                ) : (
+                                  <p className="text-gray-600">
+                                    {Messages.NO_TEST_DATA}
+                                  </p>
                                 )}
                               </div>
                             </CardContent>
@@ -1061,14 +1036,9 @@ export default function DashboardPage() {
                               </CardTitle>
                             </CardHeader>
                             <CardContent className="p-6">
-                              {testError ||
-                              !testAnalytics?.recent_wrong_questions ||
-                              testAnalytics.recent_wrong_questions.length ===
+                              {testAnalytics?.recent_wrong_questions &&
+                              testAnalytics.recent_wrong_questions.length >
                                 0 ? (
-                                <div className="flex flex-col items-center justify-center py-6 text-gray-600">
-                                  <p>{Messages.NO_TEST_DATA}</p>
-                                </div>
-                              ) : (
                                 <Accordion
                                   type="single"
                                   collapsible
@@ -1121,6 +1091,10 @@ export default function DashboardPage() {
                                     )
                                   )}
                                 </Accordion>
+                              ) : (
+                                <div className="flex flex-col items-center justify-center py-6 text-gray-600">
+                                  <p>{Messages.NO_TEST_DATA}</p>
+                                </div>
                               )}
                             </CardContent>
                           </Card>
@@ -1133,13 +1107,8 @@ export default function DashboardPage() {
                               </CardTitle>
                             </CardHeader>
                             <CardContent className="p-6">
-                              {testError ||
-                              !testAnalytics?.weekly_progress ||
-                              testAnalytics.weekly_progress.length === 0 ? (
-                                <div className="flex flex-col items-center justify-center py-6 text-gray-600">
-                                  <p>{Messages.INSUFFICIENT_DATA}</p>
-                                </div>
-                              ) : (
+                              {testAnalytics?.weekly_progress &&
+                              testAnalytics.weekly_progress.length > 0 ? (
                                 <div className="space-y-6">
                                   {testAnalytics.weekly_progress.map(
                                     (week: WeeklyProgress, index: number) => (
@@ -1172,6 +1141,10 @@ export default function DashboardPage() {
                                     )
                                   )}
                                 </div>
+                              ) : (
+                                <div className="flex flex-col items-center justify-center py-6 text-gray-600">
+                                  <p>{Messages.INSUFFICIENT_DATA}</p>
+                                </div>
                               )}
                             </CardContent>
                           </Card>
@@ -1191,17 +1164,7 @@ export default function DashboardPage() {
                                     Loading latest results...
                                   </p>
                                 </div>
-                              ) : testError || !testAnalytics?.latest_test ? (
-                                <div className="flex flex-col items-center justify-center py-8 text-gray-600">
-                                  <GraduationCap className="h-12 w-12 text-gray-400 mb-4" />
-                                  <p className="text-lg">
-                                    {Messages.NO_TEST_RESULTS}
-                                  </p>
-                                  <p className="text-sm text-gray-500 mt-1">
-                                    Complete a test to see your results here
-                                  </p>
-                                </div>
-                              ) : (
+                              ) : testAnalytics?.latest_test ? (
                                 <motion.div
                                   initial={{ opacity: 0 }}
                                   animate={{ opacity: 1 }}
@@ -1294,6 +1257,16 @@ export default function DashboardPage() {
                                     </motion.div>
                                   </motion.div>
                                 </motion.div>
+                              ) : (
+                                <div className="flex flex-col items-center justify-center py-8 text-gray-600">
+                                  <GraduationCap className="h-12 w-12 text-gray-400 mb-4" />
+                                  <p className="text-lg">
+                                    {Messages.NO_TEST_RESULTS}
+                                  </p>
+                                  <p className="text-sm text-gray-500 mt-1">
+                                    Complete a test to see your results here
+                                  </p>
+                                </div>
                               )}
                             </CardContent>
                           </Card>
@@ -1315,11 +1288,7 @@ export default function DashboardPage() {
                     </TabsContent>
 
                     <TabsContent value="topic-mastery">
-                      {masteryError ? (
-                        <p className="text-red-500 text-center">
-                          Error loading mastery data.
-                        </p>
-                      ) : !rawMasteryData ? (
+                      {!rawMasteryData ? (
                         <div className="flex justify-center items-center p-10">
                           <Loader2 className="h-8 w-8 animate-spin text-[var(--color-primary)]" />
                           <p className="ml-3 text-lg text-gray-600">

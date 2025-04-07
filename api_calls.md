@@ -1,6 +1,6 @@
 # API Calls By Page
 
-## practice/page.tsx
+## practice/page.tsx [Done]
 - `ENDPOINTS.studyGuides` - Fetch all study guides
 - `ENDPOINTS.testResults(authUserId)` - Get completed tests data
 - `ENDPOINTS.slidesGuides` - Fetch slides-based study guides
@@ -15,7 +15,7 @@
 - Potential inefficiency: Could have N+2 API calls where N is the number of guides
 - Optimization opportunity: Consider backend endpoint to batch guide test data requests
 
-## practice/guide/slides/[guideId]/page.tsx
+## practice/guide/slides/[guideId]/page.tsx [Done]
 - `ENDPOINTS.slidesGuide(guideId)` - Fetch specific slides guide data 
 - `ENDPOINTS.slidesPracticeTests(guideId)` - Fetch practice tests for the guide
 - `ENDPOINTS.testResults(userId)` - Get completed tests by the user
@@ -92,7 +92,7 @@
 - Detects the test type (adaptive vs standard) and uses the appropriate submission endpoint
 - Potential optimization: Reuse study guide data from previous page navigation context instead of fetching again
 
-## dashboard/page.tsx
+## dashboard/page.tsx [Done]
 - `ENDPOINTS.topicMastery(userId)` - Fetch user's topic mastery data
 - `ENDPOINTS.enhancedStudyHours(userId, {...options})` - Get study hours with aggregation options
 - `ENDPOINTS.testAnalytics(userId)` - Fetch user's test analytics
@@ -265,58 +265,80 @@ The documentation in api_calls.md is more accurate than I initially thought:
 
 The analysis of API call patterns and potential inefficiencies appears to be well-founded and aligns with the code structure.
 
-# Dashboard API Calls Documentation
+## New Consolidated Endpoints
 
-## fe/src/app/dashboard/page.tsx
-This page makes the following API calls:
+To optimize performance and reduce the number of API calls, the following consolidated endpoints have been implemented:
 
-- `fetcher('user')` - Fetches user data from Supabase auth
-- `ENDPOINTS.topicMastery(userId)` - Fetches mastery data for topics
-- `ENDPOINTS.enhancedStudyHours(userId, {...options})` - Fetches study hours with aggregation options and continuous polling
-  ```typescript
-  useSWR<EnhancedStudyHours>(
-    userId ? ENDPOINTS.enhancedStudyHours(userId, {
-      includeOngoing: true,
-      aggregateBy: studyTimeView,
-      includeAnonymous: false,
-    }) : null,
-    fetcher,
-    {
-      refreshInterval: 60000, // Refresh every minute
-      revalidateOnFocus: true
-    }
-  );
-  ```
-- `ENDPOINTS.testAnalytics(userId)` - Fetches test analytics data
-- `ENDPOINTS.allGuideAnalytics(userId)` - Fetches analytics for all study guides in one request
-- `ENDPOINTS.studyGuides` - Fetches all study guides
-- `ENDPOINTS.guideAnalytics(userId, selectedGuide.id)` - Falls back to individual guide analytics if allGuideAnalytics fails:
-  ```typescript
-  const { data: individualGuideAnalytics, error: guideAnalyticsError } = useSWR(
-    userId && selectedGuide?.id && !selectedGuideAnalytics
-      ? ENDPOINTS.guideAnalytics(userId, selectedGuide.id)
-      : null,
-    fetcher
-  );
-  ```
-- `ENDPOINTS.claimAnonymousSessions` - POST request to claim anonymous study sessions
-- `ENDPOINTS.startSession` - POST request to start a new user session
+### 1. All Guides with Tests (Practice Page)
 
-**Analysis:**
-- Uses SWR for most API calls providing efficient caching and deduplication
-- Implements 60-second polling for study hours data which could create excessive network traffic during idle periods
-- Makes parallel API calls for different data types (study hours, test analytics, guide analytics)
-- Has a fallback mechanism for guide analytics if the bulk fetch fails
-- Makes conditional API calls based on user state and tab selection
-- Manually initiates session via POST if no session exists
-- Auto-refreshes study hours data which could lead to unnecessary API calls:
-  ```typescript
-  const interval = setInterval(() => {
-    if (enhancedStudyHours) {
-      console.log('Auto-refreshing study hours data');
-      mutateStudyHours();
-    }
-  }, 60000);
-  ```
+**Endpoint**: `/api/study-guide/all-with-tests/:user_id`  
+**Frontend usage**: `ENDPOINTS.allGuidesWithTests(userId)`  
+**Purpose**: Consolidates multiple API calls needed for the Practice page into a single request.
 
-The page uses appropriate error handling and loading states for each data type, but the continuous polling and auto-refresh for study hours could be optimized to reduce unnecessary network traffic.
+**Returns**:
+- Regular study guides
+- Slides guides
+- Guide analytics data
+- Practice tests for both regular and slides guides
+- Completed tests by the user
+- Progress data for each guide
+
+**Reduces From**:
+- Previously: N+2 API calls (where N is the number of study guides)
+- Now: 1 consolidated API call
+
+### 2. Slides Guide with Data (Slides Guide Page)
+
+**Endpoint**: `/api/study-guide/slides-guide-with-data/:guide_id/:user_id`  
+**Frontend usage**: `ENDPOINTS.slidesGuideWithData(guideId, userId)`  
+**Purpose**: Consolidates multiple API calls needed for the slides guide page into a single request.
+
+**Returns**:
+- Slides guide data
+- Practice tests for the guide
+- User's completed tests for this guide
+- Topic mastery statuses
+- Test prerequisites/lock statuses
+
+**Reduces From**:
+- Previously: 5+ separate API calls (guide data, practice tests, completed tests, topic status checks, test status checks)
+- Now: 1 consolidated API call
+- Eliminates duplicate calls on window focus events
+
+**Benefits**:
+- Improved page load performance
+- Elimination of multiple sequential API calls
+- Simplified frontend code with cleaner data management
+- Reduced backend processing overhead
+
+### 3. Dashboard Data (Dashboard Page)
+
+**Endpoint**: `/api/user/dashboard-data/:user_id`  
+**Frontend usage**: `ENDPOINTS.dashboardData(userId, options)`  
+**Purpose**: Consolidates multiple API calls needed for the Dashboard page into a single request.
+
+**Options**:
+- `startDate`: Optional start date for filtering study hours data
+- `endDate`: Optional end date for filtering study hours data
+- `includeOngoing`: Whether to include ongoing sessions
+- `aggregateBy`: How to aggregate study hours data ("day", "week", or "month")
+- `includeAnonymous`: Whether to include anonymous sessions
+
+**Returns**:
+- Topic mastery data
+- Study hours with appropriate filtering
+- Test analytics
+- Guide analytics
+- Study guides data
+
+**Reduces From**:
+- Previously: 5+ separate API calls
+- Now: 1 consolidated API call
+
+## Benefits of Consolidated Endpoints
+
+1. **Improved Performance**: Reduced request overhead and faster page load times
+2. **Reduced Network Traffic**: Fewer HTTP requests means less bandwidth usage
+3. **Better User Experience**: Faster rendering of components and less waiting time
+4. **Reduced Server Load**: Fewer database queries and processing on the backend
+5. **Simplified Frontend Code**: Cleaner code with less state management for multiple requests
