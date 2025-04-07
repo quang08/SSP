@@ -134,49 +134,45 @@ const StudyGuidePage: React.FC = () => {
 
   const userId = userData?.id;
 
-  const { data: studyGuide, error: studyGuideError } = useSWR<StudyGuideData>(
-    title ? ENDPOINTS.studyGuide(title) : null,
-    fetcher
+  // Use the consolidated endpoint for fetching all data
+  const {
+    data: consolidatedData,
+    error: consolidatedError,
+    mutate: refreshData,
+  } = useSWR(
+    title && userId ? ENDPOINTS.guideWithData(title, userId) : null,
+    fetcher,
+    {
+      revalidateOnFocus: false,
+      dedupingInterval: 10000, // 10 seconds
+    }
   );
 
-  // Fetch guide analytics to check if this guide has stats
-  const { data: guideAnalytics } = useSWR(
-    userId && studyGuide?.study_guide_id
-      ? ENDPOINTS.guideAnalytics(userId, studyGuide.study_guide_id)
-      : null,
-    fetcher
-  );
+  // Extract data from the consolidated response
+  const studyGuide = consolidatedData?.guide;
+  const testsData = { practice_tests: consolidatedData?.practice_tests || [] };
+  const completedTestsData = {
+    test_results: consolidatedData?.completed_tests || [],
+  };
+  const guideAnalytics = consolidatedData?.guide_analytics;
+  const progress = consolidatedData?.progress || 0;
 
+  const error = consolidatedError;
+  const loading = !consolidatedData;
   const hasAnalytics = guideAnalytics && guideAnalytics.total_tests > 0;
 
-  const { data: testsData, error: testsError } = useSWR(
-    title ? ENDPOINTS.practiceTests(title) : null,
-    fetcher
-  );
-
-  const { data: completedTestsData, error: completedError } = useSWR(
-    userId && studyGuide ? ENDPOINTS.testResults(userId) : null,
-    fetcher
-  );
-
-  const loading = !studyGuide || !testsData || !completedTestsData;
-  const error = studyGuideError || testsError || completedError;
-
   const getErrorMessage = () => {
-    if (studyGuideError) {
-      return "We couldn't find this study guide. It may have been deleted or you may not have access to it.";
-    }
-    if (testsError) {
-      return 'Failed to load practice tests for this study guide.';
-    }
-    if (completedError) {
-      return 'Failed to load your progress data.';
+    if (consolidatedError) {
+      if (consolidatedError.message.includes('404')) {
+        return "We couldn't find this study guide. It may have been deleted or you may not have access to it.";
+      }
+      return 'Failed to load study guide data. Please try again.';
     }
     return 'An unexpected error occurred.';
   };
 
   // Process the data
-  const practiceTests = (testsData?.practice_tests.reduce(
+  const practiceTests = (testsData.practice_tests.reduce(
     (acc: TestMap, test: PracticeTest) => {
       acc[test.section_title] = test.practice_test_id;
       return acc;
@@ -185,23 +181,13 @@ const StudyGuidePage: React.FC = () => {
   ) || {}) as TestMap;
 
   const completedTests = new Set(
-    completedTestsData?.test_results
+    completedTestsData.test_results
       ?.filter(
         (test: CompletedTest) =>
           test.study_guide_id === studyGuide?.study_guide_id
       )
       .map((test: CompletedTest) => test.test_id) || []
   );
-
-  const progress = (() => {
-    if (!testsData?.practice_tests || !completedTestsData?.test_results)
-      return 0;
-
-    const totalTests = testsData.practice_tests.length;
-    const completedCount = completedTests.size;
-
-    return totalTests > 0 ? (completedCount / totalTests) * 100 : 0;
-  })();
 
   // Process the study guide to add completion status to sections
   const processedGuide = studyGuide
@@ -252,23 +238,8 @@ const StudyGuidePage: React.FC = () => {
       });
 
       if (response.ok) {
-        // Refresh the tests data after generating
-        const newTestsData = await fetcher(ENDPOINTS.practiceTests(title));
-
-        // Update the UI with the new tests
-        if (newTestsData && newTestsData.practice_tests) {
-          // Update practice tests mapping
-          const newPracticeTests = newTestsData.practice_tests.reduce(
-            (acc: TestMap, test: PracticeTest) => {
-              acc[test.section_title] = test.practice_test_id;
-              return acc;
-            },
-            {} as TestMap
-          );
-
-          // Force re-render
-          window.location.reload();
-        }
+        // Refresh data instead of reloading the page
+        refreshData();
       }
     } catch (error) {
       console.error('Error generating practice tests:', error);
@@ -866,7 +837,7 @@ const StudyGuidePage: React.FC = () => {
                       <p className="text-sm text-gray-600 mb-1">Sections</p>
                       <p className="font-medium">
                         {studyGuide?.chapters?.reduce(
-                          (acc, chapter) =>
+                          (acc: number, chapter: Chapter) =>
                             acc + (chapter.sections?.length || 0),
                           0
                         ) || 0}{' '}

@@ -4,6 +4,8 @@ export const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 export const ENDPOINTS = {
   studyGuide: (title: string) =>
     `${API_URL}/api/study-guide/${encodeURIComponent(title)}`,
+  guideWithData: (title: string, userId: string) =>
+    `${API_URL}/api/study-guide/guide-with-data/${encodeURIComponent(title)}/${encodeURIComponent(userId)}`,
   studyGuides: `${API_URL}/api/study-guide/all`,
   slidesGuides: `${API_URL}/api/study-guide/slides`,
   slidesGuide: (guideId: string) =>
