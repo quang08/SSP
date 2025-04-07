@@ -30,6 +30,11 @@ import {
   PlayCircle,
   CheckCircle,
   LockIcon,
+  CheckCircle2,
+  AlertTriangle,
+  Clock,
+  Lock,
+  Circle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { motion } from 'framer-motion';
@@ -71,6 +76,9 @@ interface TopicStatus {
   topic_title: string;
   is_unlocked: boolean;
   is_mastered: boolean;
+  review_recommended?: boolean;
+  attempts_used?: number;
+  mastery_percentage?: number;
 }
 
 interface TestStatus {
@@ -127,7 +135,16 @@ const SlidesGuidePage: React.FC = () => {
     Record<string, string[]>
   >({});
   const [topicMasteryStatus, setTopicMasteryStatus] = useState<
-    Record<string, { isUnlocked: boolean; isMastered: boolean }>
+    Record<
+      string,
+      {
+        isUnlocked: boolean;
+        isMastered: boolean;
+        review_recommended?: boolean;
+        attempts_used?: number;
+        mastery_percentage?: number;
+      }
+    >
   >({});
   const [userId, setUserId] = useState<string | null>(null);
 
@@ -172,13 +189,22 @@ const SlidesGuidePage: React.FC = () => {
         // 4. Set topic mastery status
         const topicStatus: Record<
           string,
-          { isUnlocked: boolean; isMastered: boolean }
+          {
+            isUnlocked: boolean;
+            isMastered: boolean;
+            review_recommended?: boolean;
+            attempts_used?: number;
+            mastery_percentage?: number;
+          }
         > = {};
         (data.topic_statuses || []).forEach((status: TopicStatus) => {
           if (status.topic_title) {
             topicStatus[status.topic_title] = {
               isUnlocked: status.is_unlocked,
               isMastered: status.is_mastered,
+              review_recommended: status.review_recommended,
+              attempts_used: status.attempts_used,
+              mastery_percentage: status.mastery_percentage,
             };
           }
         });
@@ -336,20 +362,57 @@ const SlidesGuidePage: React.FC = () => {
     const hasPrerequisites = prerequisites.length > 0;
     const topicStatus = topicMasteryStatus[topic.title];
 
+    // Determine topic status icon and styling
+    let statusIcon = null;
+    let statusText = '';
+    let bgColorClass = '';
+    let textColorClass = '';
+
+    if (topicStatus) {
+      if (topicStatus.isMastered) {
+        statusIcon = <CheckCircle2 className="h-4 w-4 text-green-500" />;
+        statusText = 'Mastered';
+        bgColorClass = 'bg-green-100';
+        textColorClass = 'text-green-700';
+      } else if (topicStatus.review_recommended) {
+        statusIcon = <AlertTriangle className="h-4 w-4 text-yellow-500" />;
+        statusText = 'Review Recommended';
+        bgColorClass = 'bg-yellow-100';
+        textColorClass = 'text-yellow-700';
+      } else if (topicStatus.attempts_used && topicStatus.attempts_used > 0) {
+        statusIcon = <Clock className="h-4 w-4 text-blue-500" />;
+        statusText = 'In Progress';
+        bgColorClass = 'bg-blue-100';
+        textColorClass = 'text-blue-700';
+      } else if (!topicStatus.isUnlocked) {
+        statusIcon = <Lock className="h-4 w-4 text-gray-500" />;
+        statusText = 'Locked';
+        bgColorClass = 'bg-gray-100';
+        textColorClass = 'text-gray-700';
+      } else {
+        statusIcon = <Circle className="h-4 w-4 text-gray-400" />;
+        statusText = 'Not Started';
+        bgColorClass = 'bg-gray-100';
+        textColorClass = 'text-gray-700';
+      }
+    }
+
     return (
       <motion.div key={topic.title} variants={item} className="space-y-4">
         <div className="flex items-start justify-between">
           <h3 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
             {topic.title}
-            {hasPrerequisites && (
+            {topicStatus && (
               <span
-                className={`text-xs px-2 py-1 rounded-full ${
-                  topicStatus?.isUnlocked
-                    ? 'bg-green-100 text-green-700'
-                    : 'bg-amber-100 text-amber-700'
-                }`}
+                className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full ${bgColorClass} ${textColorClass}`}
               >
-                {topicStatus?.isUnlocked ? 'Unlocked' : 'Locked'}
+                {statusIcon}
+                {statusText}
+                {topicStatus.mastery_percentage !== undefined && (
+                  <span className="ml-1">
+                    ({Math.round(topicStatus.mastery_percentage)}%)
+                  </span>
+                )}
               </span>
             )}
           </h3>
@@ -367,16 +430,34 @@ const SlidesGuidePage: React.FC = () => {
                 <li key={index} className="flex items-center gap-2">
                   <span>{prereq}</span>
                   {topicMasteryStatus[prereq] && (
-                    <span
-                      className={`text-xs px-1.5 py-0.5 rounded-full ${
-                        topicMasteryStatus[prereq].isMastered
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-gray-100 text-gray-700'
-                      }`}
-                    >
-                      {topicMasteryStatus[prereq].isMastered
-                        ? 'Mastered'
-                        : 'Not Mastered'}
+                    <span className="flex items-center gap-1">
+                      {topicMasteryStatus[prereq].isMastered ? (
+                        <CheckCircle2 className="h-3 w-3 text-green-500" />
+                      ) : topicMasteryStatus[prereq].review_recommended ? (
+                        <AlertTriangle className="h-3 w-3 text-yellow-500" />
+                      ) : !topicMasteryStatus[prereq].isUnlocked ? (
+                        <Lock className="h-3 w-3 text-gray-500" />
+                      ) : (
+                        <Circle className="h-3 w-3 text-gray-400" />
+                      )}
+                      <span
+                        className={`text-xs px-1.5 py-0.5 rounded-full ${
+                          topicMasteryStatus[prereq].isMastered
+                            ? 'bg-green-100 text-green-700'
+                            : topicMasteryStatus[prereq].review_recommended
+                              ? 'bg-yellow-100 text-yellow-700'
+                              : 'bg-gray-100 text-gray-700'
+                        }`}
+                      >
+                        {topicMasteryStatus[prereq].isMastered
+                          ? 'Mastered'
+                          : topicMasteryStatus[prereq].review_recommended
+                            ? 'Review Recommended'
+                            : topicMasteryStatus[prereq].attempts_used &&
+                                topicMasteryStatus[prereq].attempts_used > 0
+                              ? 'Attempted'
+                              : 'Not Mastered'}
+                      </span>
                     </span>
                   )}
                 </li>
@@ -669,12 +750,29 @@ const SlidesGuidePage: React.FC = () => {
                                                         ? 'border-gray-300 bg-gray-50 cursor-not-allowed'
                                                         : 'border-gray-200 hover:border-blue-300 cursor-pointer'
                                                     )}
-                                                    onClick={() =>
-                                                      handleQuizClick(
-                                                        test.practice_test_id,
-                                                        topic.title
-                                                      )
-                                                    }
+                                                    onClick={() => {
+                                                      // Only allow click if the test is not locked
+                                                      if (
+                                                        !lockedTests[
+                                                          test.practice_test_id
+                                                        ]
+                                                      ) {
+                                                        handleQuizClick(
+                                                          test.practice_test_id,
+                                                          topic.title
+                                                        );
+                                                      } else {
+                                                        // For locked tests, show a toast notification
+                                                        toast.error(
+                                                          'Prerequisites Required',
+                                                          {
+                                                            description:
+                                                              'You need to master the prerequisite topics before taking this test.',
+                                                            duration: 4000,
+                                                          }
+                                                        );
+                                                      }
+                                                    }}
                                                   >
                                                     <div className="flex items-center justify-between">
                                                       <div className="flex items-center gap-2">

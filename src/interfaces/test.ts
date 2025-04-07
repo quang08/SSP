@@ -101,19 +101,34 @@ export interface QuizQuestion {
 }
 
 export interface QuizResults {
+  submission_id: string;
   user_id: string;
   test_id: string;
-  score: number;
+  study_guide_id: string;
   accuracy: number;
-  status: string;
-  questions: QuizQuestion[];
+  score: number;
   time_taken: number;
+  questions: QuizQuestion[];
   mastered?: boolean;
   attempt_number?: number;
   attempts_remaining?: number;
   needs_remediation?: boolean;
   remediation_viewed?: boolean;
   can_retry?: boolean;
+  review_recommended?: boolean;
+  attempts?: Array<{
+    attempt_id: string;
+    attempt_number: number;
+    score: number;
+    accuracy: number;
+    submitted_at: string;
+    questions: QuizQuestion[];
+    time_taken: number;
+    mastered: boolean;
+    remediation_provided: boolean;
+  }>;
+  can_proceed?: boolean;
+  mastered_on_first_attempt?: boolean;
 }
 
 export interface WrongQuestion {

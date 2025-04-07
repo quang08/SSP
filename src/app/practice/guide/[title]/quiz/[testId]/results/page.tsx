@@ -476,7 +476,11 @@ const QuizResultsPage: React.FC = () => {
                       </div>
                       <div className="flex items-baseline">
                         <span className="text-4xl font-bold text-gray-900 capitalize">
-                          {results.status}
+                          {results.mastered
+                            ? 'Mastered'
+                            : results.review_recommended
+                              ? 'Review'
+                              : 'Incomplete'}
                         </span>
                       </div>
 

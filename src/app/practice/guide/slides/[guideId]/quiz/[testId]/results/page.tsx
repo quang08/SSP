@@ -263,8 +263,15 @@ const SlidesQuizResultsPage: React.FC = () => {
         const data = await response.json();
         console.log('Received consolidated response:', data);
 
+        // Prepare the result data, ensuring questions are available
+        const processedResults = {
+          ...data.submission,
+          // Extract questions from the most recent attempt if they exist
+          questions: data.submission.attempts?.[0]?.questions || [],
+        };
+
         // Set state from the consolidated response
-        setResults(data.submission);
+        setResults(processedResults);
         setMasteryThreshold(data.mastery_threshold || 80);
       } catch (error: unknown) {
         const errorMessage =
@@ -474,7 +481,11 @@ const SlidesQuizResultsPage: React.FC = () => {
                       </div>
                       <div className="flex items-baseline">
                         <span className="text-4xl font-bold text-gray-900">
-                          {Math.round(results.time_taken)}
+                          {isNaN(results.time_taken)
+                            ? (results.attempts?.[0]?.time_taken || 0).toFixed(
+                                0
+                              )
+                            : Math.round(results.time_taken)}
                         </span>
                         <span className="ml-2 text-gray-600">seconds</span>
                       </div>
@@ -592,7 +603,7 @@ const SlidesQuizResultsPage: React.FC = () => {
                   </Card>
                 </div>
 
-                {/* Retry button and remediation guidance section */}
+                {/* Enhanced retry button and remediation guidance section */}
                 <div className="mb-8 flex flex-col gap-4">
                   {results.mastered ? (
                     <div className="bg-green-50 border border-green-200 p-4 rounded-lg flex items-center gap-4">
@@ -633,6 +644,48 @@ const SlidesQuizResultsPage: React.FC = () => {
                         </Button>
                       </div>
                     </div>
+                  ) : results.review_recommended ? (
+                    <div className="bg-yellow-50 border border-yellow-200 p-6 rounded-lg">
+                      <div className="flex items-start gap-4">
+                        <AlertTriangle className="h-8 w-8 text-yellow-500 flex-shrink-0" />
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-yellow-700 text-xl mb-2">
+                            Review Recommendation
+                          </h3>
+                          <p className="text-yellow-600 mb-4">
+                            We recommend reviewing this topic&apos;s material
+                            before continuing. After 3 attempts, your highest
+                            score was {results.accuracy.toFixed(0)}% (Mastery
+                            requires {masteryThreshold}%).
+                          </p>
+                          <p className="text-yellow-700 font-medium mb-4">
+                            However, you may now proceed to the next test.
+                          </p>
+                          <div className="flex flex-wrap gap-3">
+                            <Button
+                              onClick={() =>
+                                router.push(
+                                  `/practice/guide/slides/${guideId}/quiz/${testId}/review?submission=${submissionId}`
+                                )
+                              }
+                              className="bg-yellow-500 hover:bg-yellow-600 text-white"
+                            >
+                              <BookOpen className="mr-2 h-4 w-4" />
+                              Review Topic Materials
+                            </Button>
+                            <Button
+                              onClick={() =>
+                                router.push(`/practice/guide/slides/${guideId}`)
+                              }
+                              variant="outline"
+                              className="border-yellow-300 text-yellow-700 hover:bg-yellow-50"
+                            >
+                              Continue to Next Test
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   ) : results.can_retry !== false ? (
                     <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg flex items-center gap-4">
                       <RefreshCw className="h-8 w-8 text-blue-500 flex-shrink-0" />
@@ -671,7 +724,7 @@ const SlidesQuizResultsPage: React.FC = () => {
                 </div>
 
                 <div className="space-y-6">
-                  {results.questions.map((question, index) => (
+                  {results.questions?.map((question, index) => (
                     <ResultCard
                       key={question.question_id}
                       questionNumber={index + 1}

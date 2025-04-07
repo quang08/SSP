@@ -324,7 +324,7 @@ const PracticePage: React.FC = () => {
                         Status:
                         <span className="ml-1 text-gray-900">
                           {(progressValue ?? 0) === 0
-                            ? 'Not Started'
+                            ? ''
                             : progressValue === 100
                               ? 'Completed'
                               : 'In Progress'}

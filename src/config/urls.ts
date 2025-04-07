@@ -188,4 +188,20 @@ export const ENDPOINTS = {
   getRemediation: `${API_URL}/api/mastery/get-remediation`,
   markRemediationViewed: (remediationId: string) =>
     `${API_URL}/api/mastery/mark-remediation-viewed/${remediationId}`,
+
+  // New endpoints for review materials when remediation isn't generated
+  getReviewMaterials: (
+    userId: string,
+    studyGuideId: string,
+    topicId: string,
+    submissionId: string
+  ) =>
+    `${API_URL}/api/mastery/review-materials/${encodeURIComponent(userId)}/${encodeURIComponent(studyGuideId)}/${encodeURIComponent(topicId)}/${encodeURIComponent(submissionId)}`,
+  markReviewViewed: (
+    userId: string,
+    studyGuideId: string,
+    topicId: string,
+    submissionId: string
+  ) =>
+    `${API_URL}/api/mastery/mark-review-viewed/${encodeURIComponent(userId)}/${encodeURIComponent(studyGuideId)}/${encodeURIComponent(topicId)}/${encodeURIComponent(submissionId)}`,
 };
