@@ -27,7 +27,7 @@
 - Makes a conditional API call to generate practice tests when none exist
 - Potential inefficiency: Duplicate calls to `testResults` endpoint when focus changes
 
-## practice/guide/[title]/page.tsx
+## practice/guide/[title]/page.tsx [Done]
 - `ENDPOINTS.studyGuide(title)` - Fetch specific study guide by title
 - `ENDPOINTS.practiceTests(title)` - Fetch practice tests for guide
 - `ENDPOINTS.testResults(userId)` - Get completed tests
@@ -42,7 +42,7 @@
 - Has a page reload after generating tests instead of refetching data with SWR
 - Optimization opportunity: Refetch data with SWR instead of forcing page reload
 
-## practice/guide/slides/[guideId]/quiz/[testId]/page.tsx
+## practice/guide/slides/[guideId]/quiz/[testId]/page.tsx [Done] 
 - `ENDPOINTS.practiceTest(testId)` - Fetch specific quiz/test data
 - `ENDPOINTS.slidesGuide(guideId)` - Get slides guide data
 - `ENDPOINTS.submitAdaptiveTest` - Submit adaptive test results
@@ -57,7 +57,7 @@
 - Directs users to remediation page when needed based on submission results
 - No apparent inefficiencies in call patterns
 
-## practice/guide/slides/[guideId]/quiz/[testId]/results/page.tsx
+## practice/guide/slides/[guideId]/quiz/[testId]/results/page.tsx 
 - `ENDPOINTS.testResults(userId, submissionId)` - Fetch specific test submission results
 - `ENDPOINTS.topicSpecificMastery` - Get topic-specific mastery data
 - `ENDPOINTS.retryTest` - Request a test retry
@@ -66,6 +66,18 @@
 - Fetches test results using the submission ID from URL parameters
 - Makes conditional API calls to mastery endpoints based on availability of submission data
 - Makes POST request to retry endpoint only on user action
+
+### Optimized with Consolidated Endpoint:
+- `ENDPOINTS.quizResultsWithData(testId, userId, submissionId)` - New consolidated endpoint
+- Reduces multiple API calls to a single request
+- Returns combined data including:
+  - Test submission results
+  - Mastery thresholds
+  - Retry eligibility status
+  - Topic mastery information
+  - Remediation status
+- Falls back to the original endpoints if submission ID is not available
+- Improves page load performance and reduces network overhead
 
 ## practice/guide/slides/[guideId]/quiz/[testId]/remediation/page.tsx
 - `ENDPOINTS.getRemediation` - Fetch remediation content for a specific submission
@@ -311,7 +323,53 @@ To optimize performance and reduce the number of API calls, the following consol
 - Simplified frontend code with cleaner data management
 - Reduced backend processing overhead
 
-### 3. Dashboard Data (Dashboard Page)
+### 3. Regular Guide with Data (Regular Study Guide Page)
+
+**Endpoint**: `/api/study-guide/guide-with-data/:title/:user_id`  
+**Frontend usage**: `ENDPOINTS.guideWithData(title, userId)`  
+**Purpose**: Consolidates multiple API calls needed for the regular study guide page into a single request.
+
+**Returns**:
+- Study guide data
+- Practice tests for the guide
+- User's completed tests for this guide
+- Guide analytics data
+- Pre-calculated progress data
+
+**Reduces From**:
+- Previously: 4+ separate API calls (study guide, practice tests, completed tests, guide analytics)
+- Now: 1 consolidated API call
+- Eliminates the need to calculate progress on the client
+
+**Benefits**:
+- Improved page load performance
+- Elimination of data fetching waterfall
+- Simplified frontend code with cleaner state management
+- Enhanced user experience with faster content loading
+- Improved efficiency when generating practice tests by using SWR mutation
+
+### 4. Quiz with Guide Data (Quiz/Test Page)
+
+**Endpoint**: `/api/study-guide/quiz-with-guide/:test_id/:guide_id/:user_id`  
+**Frontend usage**: `ENDPOINTS.quizWithGuide(testId, guideId, userId)`  
+**Purpose**: Consolidates multiple API calls needed for the quiz/test page into a single request.
+
+**Returns**:
+- Quiz/test data with questions
+- Slides guide data for the relevant guide
+- Previous attempt data if the user has taken this test before
+
+**Reduces From**:
+- Previously: 2+ separate API calls (quiz data, guide data)
+- Now: 1 consolidated API call
+
+**Benefits**:
+- Improved quiz loading performance
+- Single request for all necessary data
+- Access to previous attempts history for better user context
+- Simplified frontend code with unified error handling
+
+### 5. Dashboard Data (Dashboard Page)
 
 **Endpoint**: `/api/user/dashboard-data/:user_id`  
 **Frontend usage**: `ENDPOINTS.dashboardData(userId, options)`  
@@ -334,6 +392,31 @@ To optimize performance and reduce the number of API calls, the following consol
 **Reduces From**:
 - Previously: 5+ separate API calls
 - Now: 1 consolidated API call
+
+### 6. Quiz Results with Data (Quiz Results Page)
+
+**Endpoint**: `/api/study-guide/quiz-results-with-data/:test_id/:user_id/:submission_id`  
+**Frontend usage**: `ENDPOINTS.quizResultsWithData(testId, userId, submissionId)`  
+**Purpose**: Consolidates multiple API calls needed for the quiz results page into a single request.
+
+**Returns**:
+- Complete test submission data
+- Mastery threshold settings
+- Retry eligibility status
+- Topic mastery information
+- Remediation status and content (if available)
+- Attempt information
+
+**Reduces From**:
+- Previously: 2+ separate API calls (test results, mastery thresholds)
+- Now: 1 consolidated API call
+
+**Benefits**:
+- Improved page load performance
+- Elimination of sequential API calls
+- Simplified frontend code with unified data handling
+- Enhanced user experience with faster results display
+- Better remediation status tracking
 
 ## Benefits of Consolidated Endpoints
 

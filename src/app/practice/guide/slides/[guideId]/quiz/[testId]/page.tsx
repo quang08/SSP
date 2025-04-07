@@ -116,17 +116,22 @@ const SlidesQuizPage: React.FC = () => {
     return data?.user;
   });
 
-  // Fetch quiz content
-  const { data: quiz, error: quizError } = useSWR<Quiz>(
-    testId ? ENDPOINTS.practiceTest(testId) : null,
-    fetcher
+  // Use the consolidated endpoint for fetching quiz and guide data
+  const { data: consolidatedData, error: consolidatedError } = useSWR(
+    testId && guideId && userData?.id
+      ? ENDPOINTS.quizWithGuide(testId, guideId, userData.id)
+      : null,
+    fetcher,
+    {
+      revalidateOnFocus: false,
+      dedupingInterval: 10000, // 10 seconds
+    }
   );
 
-  // Fetch slides guide data
-  const { data: slidesGuideData, error: slidesGuideError } = useSWR(
-    guideId ? ENDPOINTS.slidesGuide(guideId) : null,
-    fetcher
-  );
+  // Extract the data from the consolidated response
+  const quiz = consolidatedData?.quiz;
+  const slidesGuideData = consolidatedData?.guide;
+  const previousAttempts = consolidatedData?.previous_attempts || [];
 
   const [selectedAnswers, setSelectedAnswers] = React.useState<SelectedAnswers>(
     {}
@@ -139,8 +144,8 @@ const SlidesQuizPage: React.FC = () => {
     [key: string]: number;
   }>({});
 
-  const loading = !quiz || !slidesGuideData || !userData;
-  const anyError = quizError || slidesGuideError || error;
+  const loading = !consolidatedData || !userData;
+  const anyError = consolidatedError || error;
 
   // Process quiz questions to separate multiple choice and short answer
   const processedQuestions = React.useMemo(() => {
@@ -148,20 +153,22 @@ const SlidesQuizPage: React.FC = () => {
 
     // Extract multiple choice and short answer questions
     const multipleChoice = quiz.questions.filter(
-      (q) => q.choices !== undefined
+      (q: Question) => q.choices !== undefined
     );
 
     // Parse short answer questions if they exist
     let shortAnswer: ShortAnswerQuestion[] = [];
 
     if (quiz.short_answer) {
-      shortAnswer = quiz.short_answer.map((q, i) => ({
-        question_id: `sa_${i}`,
-        question: q.question,
-        ideal_answer: q.ideal_answer,
-        source_page: q.source_page,
-        source_text: q.source_text,
-      }));
+      shortAnswer = quiz.short_answer.map(
+        (q: ShortAnswerQuestion, i: number) => ({
+          question_id: `sa_${i}`,
+          question: q.question,
+          ideal_answer: q.ideal_answer,
+          source_page: q.source_page,
+          source_text: q.source_text,
+        })
+      );
     }
 
     return { multipleChoice, shortAnswer };
@@ -583,34 +590,36 @@ const SlidesQuizPage: React.FC = () => {
             <>
               <div className="space-y-8">
                 {/* Multiple Choice Questions */}
-                {processedQuestions.multipleChoice.map((question, index) => (
-                  <QuestionCard
-                    key={`mc_${index}`}
-                    questionNumber={index + 1}
-                    question={{
-                      question_id: `${index}`,
-                      question_text: question.question,
-                      options: question.choices || {},
-                      correct_answer: question.correct || '',
-                      explanation: question.explanation || '',
-                      source_page: question.source_page,
-                      source_text: question.source_text,
-                    }}
-                    onSelectAnswer={handleSelectAnswer}
-                    selectedAnswer={selectedAnswers[index.toString()]}
-                    note={notes[index.toString()] || ''}
-                    onUpdateNote={(questionId: string, newNote: string) =>
-                      setNotes((prevNotes) => ({
-                        ...prevNotes,
-                        [questionId]: newNote,
-                      }))
-                    }
-                    userId={userData?.id || ''}
-                    testId={testId}
-                    confidence={confidenceLevels[index.toString()] || 0.5}
-                    onUpdateConfidence={handleUpdateConfidence}
-                  />
-                ))}
+                {processedQuestions.multipleChoice.map(
+                  (question: Question, index: number) => (
+                    <QuestionCard
+                      key={`mc_${index}`}
+                      questionNumber={index + 1}
+                      question={{
+                        question_id: `${index}`,
+                        question_text: question.question,
+                        options: question.choices || {},
+                        correct_answer: question.correct || '',
+                        explanation: question.explanation || '',
+                        source_page: question.source_page,
+                        source_text: question.source_text,
+                      }}
+                      onSelectAnswer={handleSelectAnswer}
+                      selectedAnswer={selectedAnswers[index.toString()]}
+                      note={notes[index.toString()] || ''}
+                      onUpdateNote={(questionId: string, newNote: string) =>
+                        setNotes((prevNotes) => ({
+                          ...prevNotes,
+                          [questionId]: newNote,
+                        }))
+                      }
+                      userId={userData?.id || ''}
+                      testId={testId}
+                      confidence={confidenceLevels[index.toString()] || 0.5}
+                      onUpdateConfidence={handleUpdateConfidence}
+                    />
+                  )
+                )}
 
                 {/* Short Answer Questions */}
                 {processedQuestions.shortAnswer.map((question, index) => (

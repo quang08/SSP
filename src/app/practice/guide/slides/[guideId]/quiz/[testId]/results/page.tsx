@@ -210,31 +210,66 @@ const SlidesQuizResultsPage: React.FC = () => {
       if (!testId) return;
 
       try {
+        setLoading(true);
         const authUserId = await getUserId();
         if (!authUserId) throw new Error('User authentication required');
 
-        const response = await fetchWithAuth(
-          ENDPOINTS.testResults(authUserId, testId)
+        // Get submission ID from URL or directly from submissionId variable
+        const subId = submissionId || searchParams.get('submission') || '';
+
+        // Log the endpoint URL for debugging
+        const endpointUrl = ENDPOINTS.quizResultsWithData(
+          testId,
+          authUserId,
+          subId
         );
+        console.log('Fetching quiz results from:', endpointUrl);
+
+        if (!subId) {
+          // If no submission ID is available, fall back to the old endpoint
+          console.log(
+            'No submission ID found, falling back to testResults endpoint'
+          );
+          const response = await fetchWithAuth(
+            ENDPOINTS.testResults(authUserId, testId)
+          );
+
+          if (!response.ok) {
+            throw new Error('Failed to fetch results');
+          }
+
+          const data: QuizResults = await response.json();
+          setResults(data);
+
+          // Also fetch mastery thresholds
+          const thresholdsResponse = await fetchWithAuth(
+            ENDPOINTS.masteryThresholds
+          );
+          if (thresholdsResponse.ok) {
+            const thresholdsData = await thresholdsResponse.json();
+            setMasteryThreshold(thresholdsData.accuracy_threshold || 80);
+          }
+
+          return;
+        }
+
+        // Use the new consolidated endpoint
+        const response = await fetchWithAuth(endpointUrl);
 
         if (!response.ok) {
           throw new Error('Failed to fetch results');
         }
 
-        const data: QuizResults = await response.json();
-        setResults(data);
+        const data = await response.json();
+        console.log('Received consolidated response:', data);
 
-        // Also fetch mastery thresholds
-        const thresholdsResponse = await fetchWithAuth(
-          ENDPOINTS.masteryThresholds
-        );
-        if (thresholdsResponse.ok) {
-          const thresholdsData = await thresholdsResponse.json();
-          setMasteryThreshold(thresholdsData.mastery_threshold || 80);
-        }
+        // Set state from the consolidated response
+        setResults(data.submission);
+        setMasteryThreshold(data.mastery_threshold || 80);
       } catch (error: unknown) {
         const errorMessage =
           error instanceof Error ? error.message : 'An error occurred';
+        console.error('Error fetching quiz results:', errorMessage);
         setError(errorMessage);
       } finally {
         setLoading(false);
@@ -242,7 +277,7 @@ const SlidesQuizResultsPage: React.FC = () => {
     };
 
     void fetchResults();
-  }, [testId]);
+  }, [testId, submissionId, searchParams]);
 
   const retryTest = async () => {
     if (!testId || !submissionId || !results) return;
