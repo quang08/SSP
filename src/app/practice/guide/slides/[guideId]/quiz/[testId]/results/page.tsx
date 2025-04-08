@@ -7,7 +7,7 @@ import { Header } from '@/components/layout/header';
 import Link from 'next/link';
 import { getUserId } from '@/app/auth/getUserId';
 import { Loading } from '@/components/ui/loading';
-import { ENDPOINTS } from '@/config/urls';
+import { ENDPOINTS, API_URL } from '@/config/urls';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -204,6 +204,12 @@ const SlidesQuizResultsPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [retryLoading, setRetryLoading] = useState<boolean>(false);
   const [masteryThreshold, setMasteryThreshold] = useState<number>(80);
+  const [actualSubmissionId, setActualSubmissionId] = useState<string>('');
+  const [debugInfo, setDebugInfo] = useState<{
+    urlSubmissionId: string;
+    fetchedSubmissionId: string;
+    hasResults: boolean;
+  }>({ urlSubmissionId: '', fetchedSubmissionId: '', hasResults: false });
 
   useEffect(() => {
     const fetchResults = async (): Promise<void> => {
@@ -217,6 +223,9 @@ const SlidesQuizResultsPage: React.FC = () => {
         // Get submission ID from URL or directly from submissionId variable
         const subId = submissionId || searchParams.get('submission') || '';
 
+        // Update debug info with URL submission ID
+        setDebugInfo((prev) => ({ ...prev, urlSubmissionId: subId }));
+
         // Log the endpoint URL for debugging
         const endpointUrl = ENDPOINTS.quizResultsWithData(
           testId,
@@ -228,7 +237,7 @@ const SlidesQuizResultsPage: React.FC = () => {
         if (!subId) {
           // If no submission ID is available, fall back to the old endpoint
           console.log(
-            'No submission ID found, falling back to testResults endpoint'
+            'No submission ID found in URL, falling back to testResults endpoint'
           );
           const response = await fetchWithAuth(
             ENDPOINTS.testResults(authUserId, testId)
@@ -239,6 +248,20 @@ const SlidesQuizResultsPage: React.FC = () => {
           }
 
           const data: QuizResults = await response.json();
+          console.log('Fallback endpoint response:', data);
+
+          // Check if we got a submission ID from the fallback endpoint
+          const fallbackSubmissionId = data.submission_id || '';
+          console.log('Fallback submission ID:', fallbackSubmissionId);
+
+          // Set the actualSubmissionId from the data if available
+          setActualSubmissionId(fallbackSubmissionId);
+          setDebugInfo((prev) => ({
+            ...prev,
+            fetchedSubmissionId: fallbackSubmissionId,
+            hasResults: true,
+          }));
+
           setResults(data);
 
           // Also fetch mastery thresholds
@@ -263,11 +286,26 @@ const SlidesQuizResultsPage: React.FC = () => {
         const data = await response.json();
         console.log('Received consolidated response:', data);
 
+        // Extract submission ID from the response data
+        const responseSubmissionId =
+          subId || data.submission?.submission_id || '';
+        console.log('Response submission ID:', responseSubmissionId);
+
+        // Store the submission ID
+        setActualSubmissionId(responseSubmissionId);
+        setDebugInfo((prev) => ({
+          ...prev,
+          fetchedSubmissionId: responseSubmissionId,
+          hasResults: !!data.submission,
+        }));
+
         // Prepare the result data, ensuring questions are available
         const processedResults = {
           ...data.submission,
           // Extract questions from the most recent attempt if they exist
           questions: data.submission.attempts?.[0]?.questions || [],
+          // Ensure submission_id is set
+          submission_id: responseSubmissionId,
         };
 
         // Set state from the consolidated response
@@ -287,7 +325,7 @@ const SlidesQuizResultsPage: React.FC = () => {
   }, [testId, submissionId, searchParams]);
 
   const retryTest = async () => {
-    if (!testId || !submissionId || !results) return;
+    if (!testId || !results) return;
 
     try {
       setRetryLoading(true);
@@ -300,6 +338,89 @@ const SlidesQuizResultsPage: React.FC = () => {
         .getSession()
         .then((res) => res.data.session?.access_token);
 
+      // Determine the submission ID - use actualSubmissionId, then results.submission_id,
+      // then fall back to the search params
+      let submissionIdToUse =
+        actualSubmissionId ||
+        results.submission_id ||
+        searchParams.get('submission') ||
+        '';
+
+      console.log('Debug submission info:', {
+        actualSubmissionId,
+        resultsSubmissionId: results.submission_id,
+        searchParamsSubmission: searchParams.get('submission'),
+        submissionIdToUse,
+        debugInfo,
+      });
+
+      // If we still don't have a submission ID, try to get the most recent submission for this test
+      if (!submissionIdToUse) {
+        console.log(
+          'No submission ID found, attempting to fetch the most recent submission'
+        );
+
+        try {
+          // First, try to get the most recent submission for this test from the backend
+          const recentSubmissionResponse = await fetchWithAuth(
+            `${API_URL}/api/study-guide/recent-submission/${userId}/${testId}`
+          );
+
+          if (recentSubmissionResponse.ok) {
+            const recentData = await recentSubmissionResponse.json();
+            if (recentData && recentData.submission_id) {
+              submissionIdToUse = recentData.submission_id;
+              console.log('Retrieved recent submission ID:', submissionIdToUse);
+              // Update our state with this ID for future use
+              setActualSubmissionId(submissionIdToUse);
+            }
+          }
+        } catch (fetchError) {
+          console.error('Error fetching recent submission:', fetchError);
+          // Continue with the retry flow even if this fails
+        }
+      }
+
+      // Final fallback - if we still don't have a submission ID, we'll make a special request
+      // that doesn't require a previous submission ID
+      if (!submissionIdToUse) {
+        console.log('Using fallback retry without submission ID');
+
+        const fallbackResponse = await fetch(
+          `${API_URL}/api/mastery/new-attempt`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              user_id: userId,
+              test_id: testId,
+              study_guide_id: guideId,
+            }),
+          }
+        );
+
+        if (fallbackResponse.ok) {
+          const fallbackData = await fallbackResponse.json();
+          if (fallbackData.can_retry) {
+            toast.success('Starting new test attempt');
+            router.push(
+              `/practice/guide/slides/${guideId}/quiz/${testId}?retry=true&attempt=${fallbackData.attempt_number || 1}`
+            );
+            setRetryLoading(false);
+            return;
+          }
+        }
+
+        throw new Error(
+          'Unable to start a new attempt - please return to the guide and try again'
+        );
+      }
+
+      console.log('Retrying test with submission ID:', submissionIdToUse);
+
       const response = await fetch(ENDPOINTS.retryTest, {
         method: 'POST',
         headers: {
@@ -310,7 +431,7 @@ const SlidesQuizResultsPage: React.FC = () => {
           user_id: userId,
           test_id: testId,
           study_guide_id: guideId,
-          previous_attempt_id: submissionId,
+          previous_attempt_id: submissionIdToUse,
         }),
       });
 
@@ -320,12 +441,12 @@ const SlidesQuizResultsPage: React.FC = () => {
         if (data.can_retry) {
           toast.success('Starting new test attempt');
           router.push(
-            `/practice/guide/slides/${guideId}/quiz/${testId}?retry=true&attempt=${data.attempt_number}&previous=${submissionId}`
+            `/practice/guide/slides/${guideId}/quiz/${testId}?retry=true&attempt=${data.attempt_number}&previous=${submissionIdToUse}`
           );
         } else if (data.needs_remediation) {
           toast.warning('Please review the remediation material first');
           router.push(
-            `/practice/guide/slides/${guideId}/quiz/${testId}/remediation?submission=${submissionId}`
+            `/practice/guide/slides/${guideId}/quiz/${testId}/remediation?submission=${submissionIdToUse}`
           );
         } else {
           toast.info(data.message || 'Cannot retry test at this time');
@@ -341,6 +462,16 @@ const SlidesQuizResultsPage: React.FC = () => {
     } finally {
       setRetryLoading(false);
     }
+  };
+
+  const getSubmissionId = () => {
+    return (
+      actualSubmissionId ||
+      results?.submission_id ||
+      '' ||
+      searchParams.get('submission') ||
+      ''
+    );
   };
 
   return (
@@ -557,7 +688,7 @@ const SlidesQuizResultsPage: React.FC = () => {
                           <p className="text-xs text-gray-500 mt-1">
                             {results.attempts_remaining === 0
                               ? 'No attempts remaining'
-                              : `${results.attempts_remaining} attempt${results.attempts_remaining !== 1 ? 's' : ''} remaining before remediation`}
+                              : ``}
                           </p>
                         </div>
                       )}
@@ -635,7 +766,7 @@ const SlidesQuizResultsPage: React.FC = () => {
                         <Button
                           onClick={() =>
                             router.push(
-                              `/practice/guide/slides/${guideId}/quiz/${testId}/remediation?submission=${submissionId}`
+                              `/practice/guide/slides/${guideId}/quiz/${testId}/remediation?submission=${getSubmissionId()}`
                             )
                           }
                           className="mt-2 bg-amber-500 hover:bg-amber-600 text-white"
@@ -665,7 +796,7 @@ const SlidesQuizResultsPage: React.FC = () => {
                             <Button
                               onClick={() =>
                                 router.push(
-                                  `/practice/guide/slides/${guideId}/quiz/${testId}/review?submission=${submissionId}`
+                                  `/practice/guide/slides/${guideId}/quiz/${testId}/review?submission=${getSubmissionId()}`
                                 )
                               }
                               className="bg-yellow-500 hover:bg-yellow-600 text-white"
