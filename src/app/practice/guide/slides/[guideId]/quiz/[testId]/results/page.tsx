@@ -29,6 +29,7 @@ import { ResultCard } from '@/components/practice/ResultCard';
 import { MathJaxContext } from 'better-react-mathjax';
 import { toast } from 'sonner';
 import { createClient } from '@/utils/supabase/client';
+import RemediationChoice from '@/components/practice/RemediationChoice';
 
 // MathJax configuration
 const mathJaxConfig = {
@@ -750,31 +751,12 @@ const SlidesQuizResultsPage: React.FC = () => {
                       </div>
                     </div>
                   ) : results.needs_remediation ? (
-                    <div className="bg-amber-50 border border-amber-200 p-4 rounded-lg flex items-center gap-4">
-                      <BookOpen className="h-8 w-8 text-amber-500 flex-shrink-0" />
-                      <div>
-                        <h3 className="font-semibold text-amber-700">
-                          Review Material Required
-                        </h3>
-                        <p className="text-amber-600">
-                          {results.attempt_number === 3
-                            ? "You've reached the maximum number of attempts (3) without achieving mastery."
-                            : `You need to review remediation after ${results.attempt_number} attempts.`}
-                          Please review the remediation material before
-                          retrying.
-                        </p>
-                        <Button
-                          onClick={() =>
-                            router.push(
-                              `/practice/guide/slides/${guideId}/quiz/${testId}/remediation?submission=${getSubmissionId()}`
-                            )
-                          }
-                          className="mt-2 bg-amber-500 hover:bg-amber-600 text-white"
-                        >
-                          View Remediation Material
-                        </Button>
-                      </div>
-                    </div>
+                    <RemediationChoice
+                      guideId={guideId}
+                      testId={testId}
+                      submissionId={getSubmissionId()}
+                      attemptNumber={results.attempt_number || 3}
+                    />
                   ) : results.review_recommended ? (
                     <div className="bg-yellow-50 border border-yellow-200 p-6 rounded-lg">
                       <div className="flex items-start gap-4">

@@ -363,13 +363,14 @@ const QuizReviewPage: React.FC = () => {
                       <BookOpen className="h-8 w-8 text-yellow-500 flex-shrink-0 mt-1" />
                       <div>
                         <h3 className="font-semibold text-yellow-700 text-xl">
-                          Review Recommended
+                          Quick Review
                         </h3>
                         <p className="text-yellow-600 mt-2">
-                          After multiple attempts, we recommend reviewing these
-                          concepts before moving on to the next test. Once
-                          you've reviewed these materials, you can continue to
-                          the next test in your learning path.
+                          After multiple attempts, we've created this focused
+                          review of key concepts. This is a simplified overview
+                          to help you refresh your understanding of the topic.
+                          Once you've reviewed these materials, you can continue
+                          to the next test in your learning path.
                         </p>
                       </div>
                     </div>
