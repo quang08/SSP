@@ -272,13 +272,11 @@ const StudyGuidePage: React.FC = () => {
     {} as TestMap
   ) || {}) as TestMap;
 
+  // Correctly create the Set of completed test IDs
   const completedTests = new Set(
-    completedTestsData.test_results
-      ?.filter(
-        (test: CompletedTest) =>
-          test.study_guide_id === studyGuide?.study_guide_id
-      )
-      .map((test: CompletedTest) => test.test_id) || []
+    consolidatedData?.completed_tests?.map(
+      (test: CompletedTest) => test.test_id
+    ) || []
   );
 
   // Process the study guide to add completion status, mastery status, and lock status to sections
@@ -1112,16 +1110,16 @@ const StudyGuidePage: React.FC = () => {
                                                       Locked (Prerequisites
                                                       Required)
                                                     </>
-                                                  ) : section.is_mastered ? (
-                                                    'Mastered'
-                                                  ) : section.review_recommended ? (
-                                                    'Review Recommended'
                                                   ) : completedTests.has(
                                                       practiceTests[
                                                         section.title
                                                       ]
                                                     ) ? (
                                                     'View Results'
+                                                  ) : section.is_mastered ? (
+                                                    'Mastered'
+                                                  ) : section.review_recommended ? (
+                                                    'Review Recommended'
                                                   ) : (
                                                     'Start Quiz'
                                                   )}

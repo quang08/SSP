@@ -20,6 +20,7 @@ import {
   CheckCircle2,
   Clock,
   RefreshCw,
+  BookOpen,
 } from 'lucide-react';
 import { AIChat } from '@/components/practice/AIChat';
 import { QuizQuestion, QuizResults } from '@/interfaces/test';
@@ -208,12 +209,16 @@ interface ConsolidatedResultsResponse {
     pass_threshold: number;
     mastery_threshold: number;
   };
+  mastery_threshold?: number;
   can_retry?: boolean;
   attempts_remaining?: number;
   topic_mastery?: {
     current_score: number;
     is_mastered: boolean;
   };
+  attempt_number?: number;
+  mastered?: boolean;
+  needs_remediation?: boolean;
 }
 
 const QuizResultsPage: React.FC = () => {
@@ -278,7 +283,17 @@ const QuizResultsPage: React.FC = () => {
     if (data && typeof data === 'object' && 'submission' in data) {
       // It's the consolidated response
       const consolidatedData = data as ConsolidatedResultsResponse;
-      setMasteryThresholds(consolidatedData.mastery_thresholds || null);
+
+      // Handle both mastery_thresholds object and direct mastery_threshold field
+      if (consolidatedData.mastery_thresholds) {
+        setMasteryThresholds(consolidatedData.mastery_thresholds);
+      } else if (consolidatedData.mastery_threshold !== undefined) {
+        setMasteryThresholds({
+          pass_threshold: consolidatedData.mastery_threshold * 0.6, // Set pass threshold to 60% of mastery
+          mastery_threshold: consolidatedData.mastery_threshold,
+        });
+      }
+
       setCanRetry(consolidatedData.can_retry || false);
       setAttemptsRemaining(consolidatedData.attempts_remaining || 0);
       setTopicMastery(consolidatedData.topic_mastery || null);
@@ -289,16 +304,45 @@ const QuizResultsPage: React.FC = () => {
   const results = useMemo(() => {
     if (!data) return null;
 
+    let submissionData: QuizResults | null = null;
+
     if (typeof data === 'object' && 'submission' in data) {
-      return (data as ConsolidatedResultsResponse).submission;
+      submissionData = (data as ConsolidatedResultsResponse).submission;
+    } else {
+      // Handle potential older format directly
+      submissionData = data as QuizResults;
     }
 
-    return data as QuizResults;
+    if (!submissionData) return null;
+
+    // --- CORRECTED LOGIC TO GET QUESTIONS ---
+    // Prioritize questions from the latest attempt in the attempts array
+    let questions: QuizQuestion[] = [];
+    if (submissionData.attempts && submissionData.attempts.length > 0) {
+      const latestAttempt =
+        submissionData.attempts[submissionData.attempts.length - 1];
+      questions = latestAttempt.questions || [];
+    } else if (submissionData.questions) {
+      // Fallback for older structure or if attempts array is missing/empty
+      questions = submissionData.questions;
+    }
+    // --- END CORRECTION ---
+
+    // Return the submission data with the correctly extracted questions
+    return {
+      ...submissionData,
+      questions: questions, // Ensure questions array is correctly assigned
+    };
   }, [data]);
 
   // Handle retry
   const handleRetry = async () => {
-    if (!userId || !testId) return;
+    if (!userId || !testId || !results?.study_guide_id) {
+      toast.error(
+        'Cannot retry test: Missing user, test, or study guide information.'
+      );
+      return;
+    }
 
     try {
       const response = await fetchWithAuth(ENDPOINTS.retryTest, {
@@ -309,21 +353,45 @@ const QuizResultsPage: React.FC = () => {
         body: JSON.stringify({
           user_id: userId,
           test_id: testId,
+          study_guide_id: results.study_guide_id,
         }),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to retry test');
+        const errorData = await response.json();
+        console.error('Retry error response:', errorData);
+        throw new Error(errorData.message || 'Failed to retry test');
       }
 
-      toast.success('Test retry initialized. Redirecting to quiz page...');
+      const retryData = await response.json();
 
-      // Navigate back to quiz page
+      if (!retryData.can_retry) {
+        toast.warning(
+          retryData.message || 'Cannot retry this test at the moment.'
+        );
+        return;
+      }
+
+      toast.success(
+        retryData.message ||
+          'Test retry initialized. Redirecting to quiz page...'
+      );
+
+      // Navigate back to quiz page with retry parameters
+      // Get the actual submission ID reliably
+      const actualSubmissionId = results?._id || data?.submission?._id;
+      if (!actualSubmissionId) {
+        toast.error('Cannot determine submission ID for retry.');
+        return;
+      }
+
       router.push(
-        `/practice/guide/${encodeURIComponent(title)}/quiz/${testId}`
+        `/practice/guide/${encodeURIComponent(title)}/quiz/${testId}?retry=true&attempt=${retryData.attempt_number}&previous=${actualSubmissionId}`
       );
     } catch (err) {
-      toast.error('Failed to initialize retry. Please try again.');
+      toast.error(
+        `Failed to initialize retry: ${err instanceof Error ? err.message : 'Unknown error'}`
+      );
       console.error('Error retrying test:', err);
     }
   };
@@ -425,7 +493,7 @@ const QuizResultsPage: React.FC = () => {
                       </div>
                       <div className="flex items-baseline">
                         <span className="text-4xl font-bold text-gray-900">
-                          {results.accuracy.toFixed(0)}%
+                          {(results.accuracy || 0).toFixed(0)}%
                         </span>
                       </div>
                       {masteryThresholds && (
@@ -453,7 +521,7 @@ const QuizResultsPage: React.FC = () => {
                       </div>
                       <div className="flex items-baseline">
                         <span className="text-4xl font-bold text-gray-900">
-                          {Math.round(results.time_taken)}
+                          {Math.round(results.time_taken || 0)}
                         </span>
                         <span className="ml-2 text-gray-600">seconds</span>
                       </div>
@@ -499,6 +567,23 @@ const QuizResultsPage: React.FC = () => {
                   </Card>
                 </div>
 
+                {/* Conditionally render Remediation Button */}
+                {(results.needs_remediation || results.remediation_viewed) &&
+                  (results?._id || (results as any)?.result_id) &&
+                  results?.study_guide_id && (
+                    <div className="mb-6 text-center">
+                      <Link
+                        href={`/practice/guide/${encodeURIComponent(title)}/quiz/${testId}/remediation?submission=${results._id || (results as any).result_id}&study_guide_id=${results.study_guide_id}`}
+                        passHref
+                      >
+                        <Button variant="secondary" size="lg">
+                          <BookOpen className="mr-2 h-5 w-5" />
+                          View Remediation Material
+                        </Button>
+                      </Link>
+                    </div>
+                  )}
+
                 {/* Add topic mastery info if available */}
                 {topicMastery && (
                   <Card className="mb-6 bg-white shadow-md">
@@ -510,7 +595,7 @@ const QuizResultsPage: React.FC = () => {
                           </h3>
                           <p className="text-sm text-gray-600">
                             Current mastery level:{' '}
-                            {topicMastery.current_score.toFixed(0)}%
+                            {(topicMastery.current_score || 0).toFixed(0)}%
                           </p>
                         </div>
                         <div
@@ -530,7 +615,7 @@ const QuizResultsPage: React.FC = () => {
                 )}
 
                 <div className="space-y-6">
-                  {results.questions.map((question, index) => (
+                  {results.questions?.map((question, index) => (
                     <ResultCard
                       key={question.question_id}
                       questionNumber={index + 1}

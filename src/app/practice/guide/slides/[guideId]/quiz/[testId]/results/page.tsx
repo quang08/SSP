@@ -240,15 +240,15 @@ const SlidesQuizResultsPage: React.FC = () => {
           console.log(
             'No submission ID found in URL, falling back to testResults endpoint'
           );
-        const response = await fetchWithAuth(
-          ENDPOINTS.testResults(authUserId, testId)
-        );
+          const response = await fetchWithAuth(
+            ENDPOINTS.testResults(authUserId, testId)
+          );
 
-        if (!response.ok) {
-          throw new Error('Failed to fetch results');
-        }
+          if (!response.ok) {
+            throw new Error('Failed to fetch results');
+          }
 
-        const data: QuizResults = await response.json();
+          const data: QuizResults = await response.json();
           console.log('Fallback endpoint response:', data);
 
           // Check if we got a submission ID from the fallback endpoint
@@ -263,7 +263,7 @@ const SlidesQuizResultsPage: React.FC = () => {
             hasResults: true,
           }));
 
-        setResults(data);
+          setResults(data);
 
           // Also fetch mastery thresholds
           const thresholdsResponse = await fetchWithAuth(
@@ -715,7 +715,7 @@ const SlidesQuizResultsPage: React.FC = () => {
                         {results.needs_remediation ? (
                           <BookOpen className="h-6 w-6 text-amber-500" />
                         ) : results.remediation_viewed ? (
-                        <CheckCircle2 className="h-6 w-6 text-green-500" />
+                          <CheckCircle2 className="h-6 w-6 text-green-500" />
                         ) : (
                           <RefreshCw className="h-6 w-6 text-blue-500" />
                         )}
@@ -734,6 +734,23 @@ const SlidesQuizResultsPage: React.FC = () => {
                     </CardContent>
                   </Card>
                 </div>
+
+                {/* Add Remediation Button */}
+                {(results.needs_remediation || results.remediation_viewed) &&
+                  getSubmissionId() &&
+                  guideId && (
+                    <div className="mb-6 text-center">
+                      <Link
+                        href={`/practice/guide/slides/${guideId}/quiz/${testId}/remediation?submission=${getSubmissionId()}`}
+                        passHref
+                      >
+                        <Button variant="secondary" size="lg">
+                          <BookOpen className="mr-2 h-5 w-5" />
+                          View Remediation Material
+                        </Button>
+                      </Link>
+                    </div>
+                  )}
 
                 {/* Enhanced retry button and remediation guidance section */}
                 <div className="mb-8 flex flex-col gap-4">

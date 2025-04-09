@@ -206,36 +206,40 @@ export const ResultCard = ({
       : `${userAnswer}` || 'No answer provided';
 
   return (
-    <div className="bg-[var(--color-background)] rounded-xl p-8 shadow-sm">
-      <div className="flex flex-col gap-6">
-        <div className="flex items-start gap-6">
-          {isCorrect ? (
-            <CheckCircle2 className="w-8 h-8 text-green-500 flex-shrink-0 mt-1" />
-          ) : (
-            <XCircle className="w-8 h-8 text-red-500 flex-shrink-0 mt-1" />
-          )}
+    <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mb-6">
+      <div className="flex flex-col gap-5">
+        <div className="flex items-start gap-4">
+          <div className="flex-shrink-0 mt-1">
+            {isCorrect ? (
+              <div className="w-10 h-10 rounded-full bg-green-50 flex items-center justify-center">
+                <CheckCircle2 className="w-6 h-6 text-green-500" />
+              </div>
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center">
+                <XCircle className="w-6 h-6 text-red-500" />
+              </div>
+            )}
+          </div>
           <div className="flex-1">
-            <h3 className="text-2xl font-medium text-[var(--color-text)] mb-6">
+            <h3 className="text-xl font-medium text-gray-900 mb-4">
               Question {questionNumber}
             </h3>
 
             {question && (
-              <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <p className="text-xl text-gray-800">
+              <div className="mb-5 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <div className="text-lg text-gray-800">
                   {renderTextWithLatex(question)}
-                </p>
+                </div>
               </div>
             )}
 
-            <div className="space-y-6">
+            <div className="space-y-5">
               {/* User's Answer Section */}
               <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <p className="text-xl text-[var(--color-text-secondary)]">
-                    Your Answer:
-                  </p>
+                <div className="flex items-center gap-2 mb-2">
+                  <p className="font-medium text-gray-700">Your Answer:</p>
                   <span
-                    className={`px-2 py-0.5 rounded-full text-xs ${
+                    className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                       isCorrect
                         ? 'bg-green-100 text-green-800'
                         : 'bg-red-100 text-red-800'
@@ -251,12 +255,13 @@ export const ResultCard = ({
                       : 'bg-red-50 border border-red-100'
                   }`}
                 >
-                  <p
-                    className={`text-xl font-medium ${
-                      isCorrect ? 'text-green-600' : 'text-red-600'
+                  <div
+                    className={`font-medium ${
+                      isCorrect ? 'text-green-700' : 'text-red-700'
                     }`}
                   >
                     {renderTextWithLatex(displayUserAnswer)}
+
                     {/* Display Confidence Level */}
                     {confidenceLevel !== undefined &&
                       confidenceLevel !== null && (
@@ -265,7 +270,7 @@ export const ResultCard = ({
                           <span>Confidence: {confidenceLevel}</span>
                         </div>
                       )}
-                  </p>
+                  </div>
                 </div>
               </div>
 
@@ -273,8 +278,8 @@ export const ResultCard = ({
               {(questionType === 'short_answer' || !isCorrect) &&
                 correctAnswer && (
                   <div>
-                    <div className="flex items-center gap-2 mb-3">
-                      <p className="text-xl text-[var(--color-text-secondary)]">
+                    <div className="flex items-center gap-2 mb-2">
+                      <p className="font-medium text-gray-700">
                         {questionType === 'short_answer'
                           ? 'Ideal Answer:'
                           : 'Correct Answer:'}
@@ -284,33 +289,45 @@ export const ResultCard = ({
                       )}
                     </div>
                     <div className="p-4 rounded-lg bg-green-50 border border-green-100">
-                      <p className="text-xl font-medium text-green-600">
+                      <div className="font-medium text-green-700">
                         {renderTextWithLatex(correctAnswer)}
-                      </p>
+                      </div>
                     </div>
                   </div>
                 )}
 
+              {/* Explanation Section - Only for Multiple Choice */}
+              {questionType !== 'short_answer' && explanation && (
+                <div>
+                  <p className="font-medium text-gray-700 mb-2">Explanation:</p>
+                  <div className="p-4 rounded-lg bg-gray-50 border border-gray-200">
+                    <div className="text-gray-800">
+                      {renderTextWithLatex(explanation)}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Feedback Section for Short Answers */}
               {questionType === 'short_answer' && feedback && (
                 <div>
-                  <p className="text-xl text-amber-700 mb-3">Feedback:</p>
+                  <p className="font-medium text-amber-700 mb-2">Feedback:</p>
                   <div className="p-4 rounded-lg bg-amber-50 border border-amber-200">
-                    <p className="text-lg text-amber-800">
+                    <div className="text-amber-800">
                       {renderTextWithLatex(feedback)}
-                    </p>
+                    </div>
 
                     {/* Key Points */}
                     {reference_part && (
                       <div className="mt-4 pt-4 border-t border-amber-200">
-                        <p className="text-md font-semibold text-amber-800 mb-2">
+                        <p className="font-medium text-amber-800 mb-2">
                           Key{' '}
                           {reference_part.includes(',') ? 'points' : 'point'} to
                           include:
                         </p>
-                        <p className="text-md text-amber-700 italic">
+                        <div className="text-amber-700 italic">
                           &quot;{renderTextWithLatex(reference_part)}&quot;
-                        </p>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -320,40 +337,46 @@ export const ResultCard = ({
               {/* Source Reference Section */}
               {questionType === 'short_answer' && sourceText && (
                 <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <p className="text-xl text-blue-700">Source Reference:</p>
+                  <div className="flex items-center gap-2 mb-2">
+                    <p className="font-medium text-blue-700">
+                      Source Reference:
+                    </p>
                     <BookOpen className="w-5 h-5 text-blue-500" />
                     {sourcePage && (
-                      <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-md text-sm font-medium">
+                      <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-md text-xs font-medium">
                         Page {sourcePage}
                       </span>
                     )}
                   </div>
                   <div className="p-4 rounded-lg bg-blue-50 border border-blue-200">
-                    <blockquote className="text-lg text-blue-800 border-l-4 border-blue-300 pl-4 italic">
-                      {renderTextWithLatex(sourceText)}
+                    <blockquote className="text-blue-800 border-l-4 border-blue-300 pl-4 italic">
+                      <div>{renderTextWithLatex(sourceText)}</div>
                     </blockquote>
-                  </div>
-                </div>
-              )}
-
-              {/* Explanation Section - Only for Multiple Choice */}
-              {questionType !== 'short_answer' && explanation && (
-                <div>
-                  <p className="text-xl text-[var(--color-text-secondary)] mb-3">
-                    Explanation:
-                  </p>
-                  <div className="p-4 rounded-lg bg-gray-50 border border-gray-200">
-                    <div className="text-lg text-[var(--color-text)]">
-                      {renderTextWithLatex(explanation)}
-                    </div>
                   </div>
                 </div>
               )}
             </div>
 
-            <div className="mt-6">
-              <AIChat userId={userId} testId={testId} questionId={questionId} />
+            <div className="mt-5 pt-4 border-t border-gray-200">
+              <button
+                onClick={() =>
+                  document
+                    .getElementById(`chat-${questionId}`)
+                    ?.classList.toggle('hidden')
+                }
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-700 hover:text-gray-900"
+              >
+                <MessageCircle className="w-4 h-4" />
+                Chat with AI
+              </button>
+
+              <div id={`chat-${questionId}`} className="hidden mt-3">
+                <AIChat
+                  userId={userId}
+                  testId={testId}
+                  questionId={questionId}
+                />
+              </div>
             </div>
           </div>
         </div>
