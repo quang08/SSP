@@ -240,15 +240,15 @@ const SlidesQuizResultsPage: React.FC = () => {
           console.log(
             'No submission ID found in URL, falling back to testResults endpoint'
           );
-          const response = await fetchWithAuth(
-            ENDPOINTS.testResults(authUserId, testId)
-          );
+        const response = await fetchWithAuth(
+          ENDPOINTS.testResults(authUserId, testId)
+        );
 
-          if (!response.ok) {
-            throw new Error('Failed to fetch results');
-          }
+        if (!response.ok) {
+          throw new Error('Failed to fetch results');
+        }
 
-          const data: QuizResults = await response.json();
+        const data: QuizResults = await response.json();
           console.log('Fallback endpoint response:', data);
 
           // Check if we got a submission ID from the fallback endpoint
@@ -263,7 +263,7 @@ const SlidesQuizResultsPage: React.FC = () => {
             hasResults: true,
           }));
 
-          setResults(data);
+        setResults(data);
 
           // Also fetch mastery thresholds
           const thresholdsResponse = await fetchWithAuth(
@@ -715,7 +715,7 @@ const SlidesQuizResultsPage: React.FC = () => {
                         {results.needs_remediation ? (
                           <BookOpen className="h-6 w-6 text-amber-500" />
                         ) : results.remediation_viewed ? (
-                          <CheckCircle2 className="h-6 w-6 text-green-500" />
+                        <CheckCircle2 className="h-6 w-6 text-green-500" />
                         ) : (
                           <RefreshCw className="h-6 w-6 text-blue-500" />
                         )}
@@ -766,13 +766,17 @@ const SlidesQuizResultsPage: React.FC = () => {
                             Review Recommendation
                           </h3>
                           <p className="text-yellow-600 mb-4">
-                            We recommend reviewing this topic&apos;s material
-                            before continuing. After 3 attempts, your highest
-                            score was {results.accuracy.toFixed(0)}% (Mastery
-                            requires {masteryThreshold}%).
+                            After 3 attempts, your highest score was{' '}
+                            {results.accuracy.toFixed(0)}% (Mastery requires{' '}
+                            {masteryThreshold}%). According to Bloom's Mastery
+                            Theory, you must review the remediation materials
+                            and then achieve mastery on a retry to proceed to
+                            the next test.
                           </p>
                           <p className="text-yellow-700 font-medium mb-4">
-                            However, you may now proceed to the next test.
+                            Please review the materials and then retry the test.
+                            You must achieve at least {masteryThreshold}% to
+                            unlock the next test.
                           </p>
                           <div className="flex flex-wrap gap-3">
                             <Button
@@ -784,16 +788,7 @@ const SlidesQuizResultsPage: React.FC = () => {
                               className="bg-yellow-500 hover:bg-yellow-600 text-white"
                             >
                               <BookOpen className="mr-2 h-4 w-4" />
-                              Review Topic Materials
-                            </Button>
-                            <Button
-                              onClick={() =>
-                                router.push(`/practice/guide/slides/${guideId}`)
-                              }
-                              variant="outline"
-                              className="border-yellow-300 text-yellow-700 hover:bg-yellow-50"
-                            >
-                              Continue to Next Test
+                              Review Remediation Materials
                             </Button>
                           </div>
                         </div>

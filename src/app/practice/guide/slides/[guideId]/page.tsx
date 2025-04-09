@@ -326,9 +326,9 @@ const SlidesGuidePage: React.FC = () => {
     }
 
     // If test is not completed and is unlocked, navigate to the test
-    router.push(
-      `/practice/guide/slides/${encodeURIComponent(guideId)}/quiz/${testId}`
-    );
+      router.push(
+        `/practice/guide/slides/${encodeURIComponent(guideId)}/quiz/${testId}`
+      );
   };
 
   const loading = !slidesGuide;
@@ -685,62 +685,62 @@ const SlidesGuidePage: React.FC = () => {
                           <div className="space-y-3">
                             {slidesGuide.topics.map(
                               (topic: SlideTopic, topicIndex: number) => (
-                                <motion.div key={topicIndex} variants={item}>
-                                  <AccordionItem
-                                    value={`topic-${topicIndex}`}
-                                    className="border-2 border-gray-300 rounded-lg overflow-hidden hover:border-blue-300 transition-all duration-300 data-[state=open]:shadow-md data-[state=open]:border-blue-300"
-                                  >
-                                    <AccordionTrigger className="px-4 py-3 hover:no-underline transition-colors">
-                                      <div className="flex items-center gap-3">
-                                        <div
-                                          className={cn(
-                                            'p-1.5 rounded-lg',
-                                            getTestsByTopic(topic.title).some(
-                                              (test) =>
-                                                completedTests.has(
-                                                  test.practice_test_id
-                                                )
-                                            )
-                                              ? 'bg-green-100'
-                                              : 'bg-blue-100'
-                                          )}
-                                        >
-                                          {getTestsByTopic(topic.title).some(
+                              <motion.div key={topicIndex} variants={item}>
+                                <AccordionItem
+                                  value={`topic-${topicIndex}`}
+                                  className="border-2 border-gray-300 rounded-lg overflow-hidden hover:border-blue-300 transition-all duration-300 data-[state=open]:shadow-md data-[state=open]:border-blue-300"
+                                >
+                                  <AccordionTrigger className="px-4 py-3 hover:no-underline transition-colors">
+                                    <div className="flex items-center gap-3">
+                                      <div
+                                        className={cn(
+                                          'p-1.5 rounded-lg',
+                                          getTestsByTopic(topic.title).some(
                                             (test) =>
                                               completedTests.has(
                                                 test.practice_test_id
                                               )
-                                          ) ? (
-                                            <CheckCircle className="h-4 w-4 text-green-600" />
-                                          ) : (
-                                            <PlayCircle className="h-4 w-4 text-blue-600" />
-                                          )}
-                                        </div>
-                                        <span className="text-left font-medium text-gray-800">
-                                          {topic.title}
-                                        </span>
+                                          )
+                                            ? 'bg-green-100'
+                                            : 'bg-blue-100'
+                                        )}
+                                      >
+                                        {getTestsByTopic(topic.title).some(
+                                          (test) =>
+                                            completedTests.has(
+                                              test.practice_test_id
+                                            )
+                                        ) ? (
+                                          <CheckCircle className="h-4 w-4 text-green-600" />
+                                        ) : (
+                                          <PlayCircle className="h-4 w-4 text-blue-600" />
+                                        )}
                                       </div>
-                                    </AccordionTrigger>
+                                      <span className="text-left font-medium text-gray-800">
+                                        {topic.title}
+                                      </span>
+                                    </div>
+                                  </AccordionTrigger>
 
-                                    <AccordionContent className="px-4 pb-4 pt-1">
-                                      <div className="space-y-2.5">
-                                        {renderTopic(topic)}
+                                  <AccordionContent className="px-4 pb-4 pt-1">
+                                    <div className="space-y-2.5">
+                                      {renderTopic(topic)}
 
-                                        {/* Display practice tests for this topic */}
-                                        {getTestsByTopic(topic.title).length >
-                                          0 && (
-                                          <div className="mt-4 pt-4 border-t border-gray-200">
-                                            <h4 className="font-medium text-gray-900 mb-3">
-                                              Practice Tests
-                                            </h4>
-                                            <div className="space-y-2">
-                                              {getTestsByTopic(topic.title).map(
-                                                (
-                                                  test: SlidePracticeTest,
-                                                  testIndex: number
-                                                ) => (
-                                                  <div
-                                                    key={testIndex}
+                                      {/* Display practice tests for this topic */}
+                                      {getTestsByTopic(topic.title).length >
+                                        0 && (
+                                        <div className="mt-4 pt-4 border-t border-gray-200">
+                                          <h4 className="font-medium text-gray-900 mb-3">
+                                            Practice Tests
+                                          </h4>
+                                          <div className="space-y-2">
+                                            {getTestsByTopic(topic.title).map(
+                                              (
+                                                test: SlidePracticeTest,
+                                                testIndex: number
+                                              ) => (
+                                                <div
+                                                  key={testIndex}
                                                     id={`test-${test.practice_test_id}`}
                                                     className={cn(
                                                       'rounded-lg border p-3 transition-all',
@@ -757,7 +757,7 @@ const SlidesGuidePage: React.FC = () => {
                                                           test.practice_test_id
                                                         ]
                                                       ) {
-                                                        handleQuizClick(
+                                                    handleQuizClick(
                                                           test.practice_test_id,
                                                           topic.title
                                                         );
@@ -773,13 +773,13 @@ const SlidesGuidePage: React.FC = () => {
                                                         );
                                                       }
                                                     }}
-                                                  >
-                                                    <div className="flex items-center justify-between">
-                                                      <div className="flex items-center gap-2">
-                                                        {completedTests.has(
-                                                          test.practice_test_id
-                                                        ) ? (
-                                                          <CheckCircle className="h-4 w-4 text-green-500" />
+                                                >
+                                                  <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-2">
+                                                      {completedTests.has(
+                                                        test.practice_test_id
+                                                      ) ? (
+                                                        <CheckCircle className="h-4 w-4 text-green-500" />
                                                         ) : lockedTests[
                                                             test
                                                               .practice_test_id
@@ -831,9 +831,9 @@ const SlidesGuidePage: React.FC = () => {
                                                               </TooltipContent>
                                                             </Tooltip>
                                                           </TooltipProvider>
-                                                        ) : (
-                                                          <PlayCircle className="h-4 w-4 text-blue-500" />
-                                                        )}
+                                                      ) : (
+                                                        <PlayCircle className="h-4 w-4 text-blue-500" />
+                                                      )}
                                                         <span
                                                           className={cn(
                                                             'font-medium text-sm',
@@ -843,50 +843,50 @@ const SlidesGuidePage: React.FC = () => {
                                                             ] && 'text-gray-500'
                                                           )}
                                                         >
-                                                          {completedTests.has(
-                                                            test.practice_test_id
-                                                          )
-                                                            ? 'View Results'
+                                                        {completedTests.has(
+                                                          test.practice_test_id
+                                                        )
+                                                          ? 'View Results'
                                                             : lockedTests[
                                                                   test
                                                                     .practice_test_id
                                                                 ]
                                                               ? 'Locked (Prerequisites Required)'
-                                                              : 'Take Quiz'}
-                                                        </span>
-                                                      </div>
-                                                      <span className="text-xs text-gray-500">
-                                                        {(test.questions
-                                                          .length || 0) +
-                                                          (test.short_answer
-                                                            ?.length || 0)}{' '}
-                                                        questions
+                                                          : 'Take Quiz'}
                                                       </span>
                                                     </div>
+                                                    <span className="text-xs text-gray-500">
+                                                        {(test.questions
+                                                          .length || 0) +
+                                                        (test.short_answer
+                                                          ?.length || 0)}{' '}
+                                                      questions
+                                                    </span>
                                                   </div>
-                                                )
-                                              )}
-                                            </div>
+                                                </div>
+                                              )
+                                            )}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* If no tests exist for this topic, show generate button */}
+                                      {getTestsByTopic(topic.title).length ===
+                                        0 &&
+                                        !generatingTests && (
+                                          <div className="mt-4 pt-4 border-t border-gray-200">
+                                            <Button
+                                              onClick={generatePracticeTests}
+                                              className="w-full bg-blue-500 hover:bg-blue-600 text-white"
+                                            >
+                                              Generate Practice Tests
+                                            </Button>
                                           </div>
                                         )}
-
-                                        {/* If no tests exist for this topic, show generate button */}
-                                        {getTestsByTopic(topic.title).length ===
-                                          0 &&
-                                          !generatingTests && (
-                                            <div className="mt-4 pt-4 border-t border-gray-200">
-                                              <Button
-                                                onClick={generatePracticeTests}
-                                                className="w-full bg-blue-500 hover:bg-blue-600 text-white"
-                                              >
-                                                Generate Practice Tests
-                                              </Button>
-                                            </div>
-                                          )}
-                                      </div>
-                                    </AccordionContent>
-                                  </AccordionItem>
-                                </motion.div>
+                                    </div>
+                                  </AccordionContent>
+                                </AccordionItem>
+                              </motion.div>
                               )
                             )}
                           </div>
