@@ -56,7 +56,6 @@ import * as Messages from '@/config/messages';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { TopicMasteryCard } from '../../components/dashboard/topic-mastery-card';
-import { initSessionActivity } from '@/utils/session-management';
 import { MathJax, MathJaxContext } from 'better-react-mathjax';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
@@ -386,47 +385,15 @@ export default function DashboardPage() {
   );
   const [isClaimingAnonymousSessions, setIsClaimingAnonymousSessions] =
     useState(false);
-  const [isUserActive, setIsUserActive] = useState(true);
-  const [lastActivity, setLastActivity] = useState(Date.now());
-  const INACTIVITY_THRESHOLD = 5 * 60 * 1000; // 5 minutes
-
-  // Replace the direct SWR call with our useUser hook
   const {
     user: userData,
     isLoading: userLoading,
     error: userError,
   } = useUser();
 
-  const userId = userData?.id; // Declare userId AFTER fetching userData
+  const userId = userData?.id;
 
-  // Track user activity
-  useEffect(() => {
-    const updateActivity = () => {
-      setIsUserActive(true);
-      setLastActivity(Date.now());
-    };
-
-    // Events that indicate user activity
-    window.addEventListener('mousemove', updateActivity);
-    window.addEventListener('keydown', updateActivity);
-    window.addEventListener('click', updateActivity);
-
-    // Check if user is inactive
-    const checkInactivity = setInterval(() => {
-      if (Date.now() - lastActivity > INACTIVITY_THRESHOLD) {
-        setIsUserActive(false);
-      }
-    }, 60000);
-
-    return () => {
-      window.removeEventListener('mousemove', updateActivity);
-      window.removeEventListener('keydown', updateActivity);
-      window.removeEventListener('click', updateActivity);
-      clearInterval(checkInactivity);
-    };
-  }, [lastActivity]);
-
-  // Use the consolidated dashboard data endpoint with activity-based polling
+  // Use the consolidated dashboard data endpoint
   const {
     data: dashboardData,
     error: dashboardError,
@@ -434,52 +401,29 @@ export default function DashboardPage() {
   } = useSWR(
     userId
       ? ENDPOINTS.dashboardData(userId, {
-          includeOngoing: false,
-          aggregateBy: studyTimeView,
-          includeAnonymous: false,
+          // No session params needed here
         })
       : null,
     fetcher,
     {
-      refreshInterval: isUserActive ? 60000 : 0, // Only poll when user is active
-      revalidateOnFocus: isUserActive, // Only revalidate on focus if user is active
-      dedupingInterval: 10000, // Avoid duplicated requests within 10 seconds
+      // Keep basic SWR config, removed activity-based refresh
+      refreshInterval: 60000,
+      revalidateOnFocus: true,
+      dedupingInterval: 10000,
       onError: (err) => {
         console.error('Error fetching dashboard data:', err);
       },
     }
   );
 
-  // Handle page visibility changes - MOVED AFTER SWR DECLARATION
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        // Stop polling when tab is not visible by manually revalidating with no auto-refresh
-        if (userId) {
-          mutateDashboardData(); // Just trigger a final update
-        }
-      } else {
-        // Resume polling when tab becomes visible if user is active
-        if (isUserActive && userId) {
-          mutateDashboardData(); // Trigger an immediate update
-        }
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [userId, isUserActive, mutateDashboardData]);
-
   // Extract data from the consolidated response
   const rawMasteryData = dashboardData?.topic_mastery;
-  const enhancedStudyHours = dashboardData?.study_hours;
+  const enhancedStudyHours = dashboardData?.study_hours; // Now contains testing time
   const testAnalytics = dashboardData?.test_analytics;
-  const allGuideAnalytics = dashboardData
+  const allGuideAnalytics = dashboardData?.guide_analytics
     ? { study_guides: dashboardData.guide_analytics }
     : null;
-  const studyGuidesResponse = dashboardData
+  const studyGuidesResponse = dashboardData?.study_guides
     ? { study_guides: dashboardData.study_guides }
     : null;
 
@@ -577,7 +521,7 @@ export default function DashboardPage() {
     return grouped;
   }, [rawMasteryData, userId]);
 
-  // Add a function to check if user is new (no study hours)
+  // Check if user is new based on *testing* time
   const isNewUser = useMemo(() => {
     if (!enhancedStudyHours) return true;
     return enhancedStudyHours.total_hours === 0;
@@ -589,208 +533,6 @@ export default function DashboardPage() {
     userData?.user_metadata?.display_name ||
     userData?.email?.split('@')[0] ||
     'Student';
-
-  // Add function to select a guide by ID - KEEPING THIS for potential future use or other tabs
-  const selectGuideById = useCallback(
-    (guideId: string) => {
-      console.log(`Trying to select guide with ID: ${guideId}`);
-
-      // If studyGuides is potentially undefined, check before using findIndex
-      const guideIndex =
-        studyGuides?.findIndex(
-          (guide: DashboardGuide) => guide.id === guideId
-        ) ?? -1; // Default to -1 if studyGuides is null/undefined
-
-      console.log(
-        `Found guide at index: ${guideIndex}, total guides: ${studyGuides?.length ?? 0}`
-      );
-
-      if (guideIndex >= 0 && studyGuides) {
-        // Check studyGuides again
-        const guide = studyGuides[guideIndex];
-        console.log(
-          `Selecting guide: ${guide.title}, type: ${guide.type || 'regular'}`
-        );
-        // setSelectedGuideIndex(guideIndex); // Don't set index if not used
-        return true;
-      } else {
-        // For debugging, log all available guide IDs
-        if (studyGuides && studyGuides.length > 0) {
-          console.log('Available guide IDs:');
-          studyGuides.forEach((g: DashboardGuide) =>
-            console.log(`- ${g.id} (${g.title})`)
-          );
-        } else {
-          console.log('studyGuides array is empty or undefined');
-        }
-      }
-
-      return false;
-    },
-    [studyGuides] // Dependency array still uses studyGuides
-  );
-
-  // Try to match guides when allGuideAnalytics changes
-  useEffect(() => {
-    // Ensure allGuideAnalytics and study_guides exist before accessing them
-    if (
-      allGuideAnalytics &&
-      allGuideAnalytics.study_guides &&
-      allGuideAnalytics.study_guides.length > 0 &&
-      studyGuides &&
-      studyGuides.length > 0
-    ) {
-      console.log('Matching study guides with analytics...');
-
-      // Now TypeScript knows allGuideAnalytics is not null
-      const guideWithData = allGuideAnalytics.study_guides.find(
-        (guide: GuideAnalytics) => guide.total_tests > 0
-      );
-
-      if (guideWithData) {
-        console.log(
-          `Found guide with data: ${guideWithData.study_guide_id}, trying to select it`
-        );
-
-        // Try to find this guide in studyGuides
-        const guideIndex = studyGuides.findIndex(
-          (guide: DashboardGuide) => guide.id === guideWithData.study_guide_id
-        );
-
-        if (guideIndex >= 0) {
-          console.log(`Found guide at index ${guideIndex}, selecting it`);
-          // setSelectedGuideIndex(guideIndex); // Don't set index if not used
-        } else {
-          console.log(
-            `Guide not found in studyGuides, something may be wrong with the filtering`
-          );
-          console.log(
-            'Available guides:',
-            studyGuides.map((g) => `${g.id} (${g.title})`)
-          );
-        }
-      }
-    }
-  }, [allGuideAnalytics, studyGuides]);
-
-  // Modify the claim anonymous sessions function to only show for new users
-  const handleClaimAnonymousSessions = useCallback(async () => {
-    if (!userId || !isNewUser) return;
-
-    try {
-      setIsClaimingAnonymousSessions(true);
-      const token = await supabase.auth
-        .getSession()
-        .then((res) => res.data.session?.access_token);
-
-      const response = await fetch(ENDPOINTS.claimAnonymousSessions, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ user_id: userId }),
-      });
-
-      if (!response.ok) {
-        console.error('Error response:', await response.text());
-        throw new Error(
-          `Server returned ${response.status}: ${response.statusText}`
-        );
-      }
-
-      const result = await response.json();
-
-      if (result.success) {
-        toast.success(
-          `Successfully claimed ${result.claimed_count} anonymous sessions!`
-        );
-        // After claiming, refetch with includeAnonymous=true
-        mutateDashboardData();
-      } else {
-        toast.info(result.message || 'No anonymous sessions found to claim');
-      }
-    } catch (error) {
-      console.error('Error claiming anonymous sessions:', error);
-      toast.error('Failed to claim anonymous sessions. Please try again.');
-    } finally {
-      setIsClaimingAnonymousSessions(false);
-    }
-  }, [userId, supabase, mutateDashboardData, isNewUser]);
-
-  // Manually refresh study hours data when on dashboard tab - REPLACE THIS BLOCK
-  useEffect(() => {
-    // Check if session_id exists but user is logged in - this means we need to start a new session
-    const hasSessionId = localStorage.getItem('session_id');
-    const sessionStarted = { current: false }; // Use object to track if we've started a session
-
-    if (!hasSessionId && userId && !sessionStarted.current) {
-      console.log(
-        'No session found but user is logged in, starting new session'
-      );
-      sessionStarted.current = true;
-      startNewSession(userId);
-    }
-
-    // Remove the redundant interval - SWR's refreshInterval handles this
-  }, [userId, mutateDashboardData]);
-
-  // Session activity monitoring
-  useEffect(() => {
-    // Only run on the client
-    if (typeof window === 'undefined') return;
-
-    // Initialize session activity monitoring and get the cleanup function
-    const cleanupSessionActivity = initSessionActivity();
-
-    // Return the cleanup function to be called when component unmounts
-    return () => {
-      if (cleanupSessionActivity) {
-        cleanupSessionActivity();
-      }
-    };
-  }, []);
-
-  // Modify the startNewSession function to include session activity monitoring
-  const startNewSession = async (userId: string) => {
-    try {
-      console.log('Starting new session for dashboard');
-      const token = await supabase.auth
-        .getSession()
-        .then((res) => res.data.session?.access_token);
-
-      const response = await fetch(ENDPOINTS.startSession, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          device: 'browser',
-          user_id: userId,
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        localStorage.setItem('session_id', data.session_id);
-        console.log('Dashboard session started:', data.session_id);
-
-        // Initialize session activity monitoring since we started a new session
-        initSessionActivity();
-
-        // Refresh study hours to include this new session
-        mutateDashboardData();
-      } else {
-        console.error(
-          'Failed to start dashboard session:',
-          await response.text()
-        );
-      }
-    } catch (error) {
-      console.error('Error starting dashboard session:', error);
-    }
-  };
 
   // Generate default values for the accordion to have all items open
   const defaultAccordionValues = useMemo(() => {
@@ -1011,32 +753,14 @@ export default function DashboardPage() {
                                 {enhancedStudyHours?.total_hours === 0 ? (
                                   <div className="space-y-2">
                                     <p className="text-gray-600">
-                                      {Messages.NO_STUDY_HOURS}
+                                      Complete some tests to see total time.
                                     </p>
-                                    {userId && isNewUser && (
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        className="mt-2 text-xs"
-                                        onClick={handleClaimAnonymousSessions}
-                                        disabled={isClaimingAnonymousSessions}
-                                      >
-                                        {isClaimingAnonymousSessions ? (
-                                          <>
-                                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                                            Claiming...
-                                          </>
-                                        ) : (
-                                          'Find My Sessions'
-                                        )}
-                                      </Button>
-                                    )}
                                   </div>
                                 ) : (
                                   <>
                                     <div className="flex items-baseline">
                                       <span className="text-4xl font-bold text-gray-900">
-                                        {enhancedStudyHours.total_hours}
+                                        {enhancedStudyHours?.total_hours}
                                       </span>
                                       <span className="ml-2 text-gray-600">
                                         hours total
@@ -1106,82 +830,6 @@ export default function DashboardPage() {
                             </CardContent>
                           </motion.div>
                         </motion.div>
-
-                        {/* Study Time Periods Section */}
-                        {enhancedStudyHours?.time_periods &&
-                          enhancedStudyHours.time_periods.length > 0 && (
-                            <motion.div variants={fadeInUp} className="mb-12">
-                              <Card className="bg-white shadow-lg">
-                                <CardHeader className="border-b border-gray-100">
-                                  <div className="flex justify-between items-center">
-                                    <CardTitle className="text-2xl font-bold text-gray-900 flex items-center">
-                                      <Calendar className="h-6 w-6 text-[var(--color-primary)] mr-2" />
-                                      Study Activity
-                                    </CardTitle>
-                                    <div className="flex items-center space-x-2">
-                                      <TabsList className="bg-gray-100">
-                                        <TabsTrigger
-                                          value="week"
-                                          onClick={() =>
-                                            setStudyTimeView('week')
-                                          }
-                                          className={
-                                            studyTimeView === 'week'
-                                              ? 'bg-white'
-                                              : ''
-                                          }
-                                        >
-                                          Week
-                                        </TabsTrigger>
-                                      </TabsList>
-                                    </div>
-                                  </div>
-                                </CardHeader>
-                                <CardContent className="p-6">
-                                  <div className="space-y-5">
-                                    {enhancedStudyHours.time_periods.map(
-                                      (period: TimePeriod, index: number) => (
-                                        <motion.div
-                                          key={period.period}
-                                          initial={{ opacity: 0, y: 10 }}
-                                          animate={{ opacity: 1, y: 0 }}
-                                          transition={{ delay: index * 0.05 }}
-                                          className="relative"
-                                        >
-                                          <div className="flex justify-between items-center mb-2">
-                                            <div className="flex items-center">
-                                              <BarChart3 className="h-4 w-4 text-gray-500 mr-2" />
-                                              <span className="text-sm font-medium text-gray-700">
-                                                {period.period}
-                                              </span>
-                                            </div>
-                                            <div className="flex items-center space-x-3">
-                                              <span className="text-sm text-gray-500">
-                                                {period.session_count}{' '}
-                                                {period.session_count === 1
-                                                  ? 'session'
-                                                  : 'sessions'}
-                                              </span>
-                                              <span className="text-sm font-bold text-[var(--color-primary)]">
-                                                {period.hours.toFixed(1)} hrs
-                                              </span>
-                                            </div>
-                                          </div>
-                                          <Progress
-                                            value={Math.min(
-                                              period.hours * 10,
-                                              100
-                                            )}
-                                            className="h-2"
-                                          />
-                                        </motion.div>
-                                      )
-                                    )}
-                                  </div>
-                                </CardContent>
-                              </Card>
-                            </motion.div>
-                          )}
 
                         <motion.div
                           variants={fadeInUp}
