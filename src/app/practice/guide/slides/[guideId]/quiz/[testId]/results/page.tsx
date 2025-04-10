@@ -206,11 +206,6 @@ const SlidesQuizResultsPage: React.FC = () => {
   const [retryLoading, setRetryLoading] = useState<boolean>(false);
   const [masteryThreshold, setMasteryThreshold] = useState<number>(80);
   const [actualSubmissionId, setActualSubmissionId] = useState<string>('');
-  const [debugInfo, setDebugInfo] = useState<{
-    urlSubmissionId: string;
-    fetchedSubmissionId: string;
-    hasResults: boolean;
-  }>({ urlSubmissionId: '', fetchedSubmissionId: '', hasResults: false });
 
   useEffect(() => {
     const fetchResults = async (): Promise<void> => {
@@ -223,9 +218,6 @@ const SlidesQuizResultsPage: React.FC = () => {
 
         // Get submission ID from URL or directly from submissionId variable
         const subId = submissionId || searchParams.get('submission') || '';
-
-        // Update debug info with URL submission ID
-        setDebugInfo((prev) => ({ ...prev, urlSubmissionId: subId }));
 
         // Log the endpoint URL for debugging
         const endpointUrl = ENDPOINTS.quizResultsWithData(
@@ -257,11 +249,6 @@ const SlidesQuizResultsPage: React.FC = () => {
 
           // Set the actualSubmissionId from the data if available
           setActualSubmissionId(fallbackSubmissionId);
-          setDebugInfo((prev) => ({
-            ...prev,
-            fetchedSubmissionId: fallbackSubmissionId,
-            hasResults: true,
-          }));
 
           setResults(data);
 
@@ -294,11 +281,6 @@ const SlidesQuizResultsPage: React.FC = () => {
 
         // Store the submission ID
         setActualSubmissionId(responseSubmissionId);
-        setDebugInfo((prev) => ({
-          ...prev,
-          fetchedSubmissionId: responseSubmissionId,
-          hasResults: !!data.submission,
-        }));
 
         // Prepare the result data, ensuring questions are available
         const processedResults = {
@@ -326,7 +308,30 @@ const SlidesQuizResultsPage: React.FC = () => {
   }, [testId, submissionId, searchParams]);
 
   const retryTest = async () => {
-    if (!testId || !results) return;
+    if (!testId || !results || !guideId) return;
+
+    // 1. Reliably get the submission ID from available sources
+    let submissionIdToUse =
+      actualSubmissionId ||
+      results.submission_id ||
+      (results as any).result_id || // Check for result_id (from user feedback)
+      (results as any)._id || // Check for _id as another possibility
+      searchParams.get('submission') ||
+      '';
+
+    // If no ID is found after checking all sources, show error and stop.
+    if (!submissionIdToUse) {
+      console.error('Could not determine submission ID for retry.', {
+        actualSubmissionId,
+        resultsSubmissionId: results.submission_id,
+        resultsResultId: (results as any).result_id,
+        results_id: (results as any)._id,
+        searchParamsSubmission: searchParams.get('submission'),
+      });
+      toast.error('Cannot retry test: Missing submission context.');
+      setError('Missing submission context for retry');
+      return;
+    }
 
     try {
       setRetryLoading(true);
@@ -338,87 +343,6 @@ const SlidesQuizResultsPage: React.FC = () => {
       const token = await supabase.auth
         .getSession()
         .then((res) => res.data.session?.access_token);
-
-      // Determine the submission ID - use actualSubmissionId, then results.submission_id,
-      // then fall back to the search params
-      let submissionIdToUse =
-        actualSubmissionId ||
-        results.submission_id ||
-        searchParams.get('submission') ||
-        '';
-
-      console.log('Debug submission info:', {
-        actualSubmissionId,
-        resultsSubmissionId: results.submission_id,
-        searchParamsSubmission: searchParams.get('submission'),
-        submissionIdToUse,
-        debugInfo,
-      });
-
-      // If we still don't have a submission ID, try to get the most recent submission for this test
-      if (!submissionIdToUse) {
-        console.log(
-          'No submission ID found, attempting to fetch the most recent submission'
-        );
-
-        try {
-          // First, try to get the most recent submission for this test from the backend
-          const recentSubmissionResponse = await fetchWithAuth(
-            `${API_URL}/api/study-guide/recent-submission/${userId}/${testId}`
-          );
-
-          if (recentSubmissionResponse.ok) {
-            const recentData = await recentSubmissionResponse.json();
-            if (recentData && recentData.submission_id) {
-              submissionIdToUse = recentData.submission_id;
-              console.log('Retrieved recent submission ID:', submissionIdToUse);
-              // Update our state with this ID for future use
-              setActualSubmissionId(submissionIdToUse);
-            }
-          }
-        } catch (fetchError) {
-          console.error('Error fetching recent submission:', fetchError);
-          // Continue with the retry flow even if this fails
-        }
-      }
-
-      // Final fallback - if we still don't have a submission ID, we'll make a special request
-      // that doesn't require a previous submission ID
-      if (!submissionIdToUse) {
-        console.log('Using fallback retry without submission ID');
-
-        const fallbackResponse = await fetch(
-          `${API_URL}/api/mastery/new-attempt`,
-          {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              user_id: userId,
-              test_id: testId,
-              study_guide_id: guideId,
-            }),
-          }
-        );
-
-        if (fallbackResponse.ok) {
-          const fallbackData = await fallbackResponse.json();
-          if (fallbackData.can_retry) {
-            toast.success('Starting new test attempt');
-            router.push(
-              `/practice/guide/slides/${guideId}/quiz/${testId}?retry=true&attempt=${fallbackData.attempt_number || 1}`
-            );
-            setRetryLoading(false);
-            return;
-          }
-        }
-
-        throw new Error(
-          'Unable to start a new attempt - please return to the guide and try again'
-        );
-      }
 
       console.log('Retrying test with submission ID:', submissionIdToUse);
 
@@ -737,11 +661,13 @@ const SlidesQuizResultsPage: React.FC = () => {
 
                 {/* Conditionally render Remediation Button (Added) */}
                 {(results.needs_remediation || results.remediation_viewed) &&
-                  (results?.submission_id || results?._id) && // Check for either ID field
+                  (results.submission_id ||
+                    (results as any).result_id ||
+                    (results as any)._id) && // Check multiple ID fields
                   guideId && (
                     <div className="mb-6 text-center">
                       <Link
-                        href={`/practice/guide/slides/${guideId}/quiz/${testId}/remediation?submission=${results.submission_id || results._id}&study_guide_id=${guideId}`}
+                        href={`/practice/guide/slides/${guideId}/quiz/${testId}/remediation?submission=${(results as any).result_id || results.submission_id || (results as any)._id}&study_guide_id=${guideId}`}
                         passHref
                       >
                         <Button variant="secondary" size="lg">
@@ -792,7 +718,7 @@ const SlidesQuizResultsPage: React.FC = () => {
                             <Button
                               onClick={() =>
                                 router.push(
-                                  `/practice/guide/slides/${guideId}/quiz/${testId}/remediation?submission=${results.submission_id || results._id}&study_guide_id=${guideId}`
+                                  `/practice/guide/slides/${guideId}/quiz/${testId}/remediation?submission=${(results as any).result_id || results.submission_id || (results as any)._id}&study_guide_id=${guideId}`
                                 )
                               }
                               className="bg-yellow-500 hover:bg-yellow-600 text-white"

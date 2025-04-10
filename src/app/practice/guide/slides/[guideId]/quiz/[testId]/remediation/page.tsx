@@ -237,7 +237,12 @@ const RemediationPage: React.FC = () => {
 
   useEffect(() => {
     const fetchRemediation = async (): Promise<void> => {
-      if (!testId || !submissionId) return;
+      if (!testId || !submissionId) {
+        setError('Missing test ID or submission ID from URL.');
+        toast.error('Missing necessary information to load remediation.');
+        setLoading(false);
+        return;
+      }
 
       try {
         setLoading(true);
@@ -322,9 +327,18 @@ const RemediationPage: React.FC = () => {
     }
   };
 
+  // Get the submission ID directly from the URL search parameters for retry
+  const currentSubmissionId = searchParams.get('submission') || '';
+
   const handleRetry = async () => {
-    if (!testId || !submissionId || !guideId) return;
-    await retryTest(testId, submissionId, guideId);
+    if (!testId || !currentSubmissionId || !guideId) {
+      toast.error(
+        'Cannot retry: Missing required information (Test ID, Submission ID, or Guide ID).'
+      );
+      return;
+    }
+    // Pass the submission ID obtained from the URL parameters
+    await retryTest(testId, currentSubmissionId, guideId);
   };
 
   return (
