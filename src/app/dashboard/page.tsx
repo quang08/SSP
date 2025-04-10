@@ -61,6 +61,18 @@ import { MathJax, MathJaxContext } from 'better-react-mathjax';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import { useUser } from '@/utils/supabase/get-user';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  TooltipProps,
+} from 'recharts';
+import { format } from 'date-fns';
 
 // MathJax configuration
 const mathJaxConfig = {
@@ -182,9 +194,193 @@ const fetcher = async (url: string) => {
   return data;
 };
 
+const CustomTooltip = ({
+  active,
+  payload,
+  label,
+}: TooltipProps<number, string>) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-white p-3 border border-gray-200 shadow-md rounded-md">
+        <p className="font-medium text-sm text-gray-700">{label}</p>
+        <div className="mt-2 space-y-1">
+          {payload.map((entry, index) => (
+            <div key={index} className="flex items-center gap-2">
+              <div
+                className="w-3 h-3 rounded-full"
+                style={{ backgroundColor: entry.color }}
+              />
+              <p className="text-sm">
+                <span className="font-medium">{entry.name}: </span>
+                <span>
+                  {entry.name === 'Accuracy' ? `${entry.value}%` : entry.value}
+                </span>
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
+
+// --- Start GuideAnalyticCard Inner Component ---
+const GuideAnalyticCard = ({
+  guideAnalytic,
+  userId,
+}: {
+  guideAnalytic: GuideAnalytics;
+  userId: string | undefined;
+}) => {
+  const { data: performanceHistory, error: performanceError } = useSWR(
+    guideAnalytic?.study_guide_id && userId
+      ? ENDPOINTS.guidePerformance(guideAnalytic.study_guide_id, userId)
+      : null,
+    fetcher
+  );
+
+  const chartData = performanceHistory?.test_results
+    ? [...performanceHistory.test_results]
+        .sort(
+          (a, b) =>
+            new Date(a.submitted_at).getTime() -
+            new Date(b.submitted_at).getTime()
+        )
+        .map((result) => ({
+          date: format(new Date(result.submitted_at), 'MMM d'),
+          Score: result.score,
+          Accuracy: parseFloat(result.accuracy.toFixed(1)),
+          timestamp: result.submitted_at,
+        }))
+    : [];
+
+  return (
+    <motion.div
+      key={guideAnalytic.study_guide_id}
+      variants={fadeInUp}
+      className="h-full"
+    >
+      <Card className="bg-white shadow-md hover:shadow-lg transition-shadow duration-300 rounded-lg overflow-hidden flex flex-col h-full">
+        <CardHeader className="bg-gray-50 border-b border-gray-200 py-3 px-4">
+          <CardTitle className="text-md font-semibold text-gray-800 truncate">
+            {guideAnalytic.study_guide_title || 'Untitled Guide'}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-4 space-y-3 text-sm flex-grow">
+          {' '}
+          {/* Added flex-grow */}
+          {/* Overall Stats */}
+          <div className="flex justify-between items-center">
+            <span className="text-gray-600">Avg. Accuracy:</span>
+            <span className="font-medium text-[var(--color-primary)]">
+              {guideAnalytic.average_accuracy?.toFixed(0) ?? 'N/A'}%
+            </span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-gray-600">Avg. Score:</span>
+            <span className="font-medium">
+              {guideAnalytic.average_score?.toFixed(1) ?? 'N/A'}
+            </span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-gray-600">Total Submissions:</span>
+            <span className="font-medium">
+              {guideAnalytic.total_tests ?? 'N/A'}
+            </span>
+          </div>
+          {/* Attempt Progression */}
+          {(guideAnalytic.latest_test as any)?.attempts &&
+            (guideAnalytic.latest_test as any).attempts.length > 0 && (
+              <div className="pt-3 border-t border-gray-100">
+                <h4 className="text-sm font-medium text-gray-700 mb-2">
+                  Latest Test Attempts:
+                </h4>
+                <div className="space-y-1">
+                  {(guideAnalytic.latest_test as any).attempts
+                    .slice(-5)
+                    .map((attempt: any) => (
+                      <div
+                        key={attempt.attempt_id || attempt.attempt_number}
+                        className="flex justify-between items-center text-xs bg-gray-50 px-2 py-1 rounded"
+                      >
+                        <span className="text-gray-600">
+                          Attempt {attempt.attempt_number}:
+                        </span>
+                        <span
+                          className={`font-medium ${attempt.accuracy >= 80 ? 'text-green-600' : 'text-amber-600'}`}
+                        >
+                          {attempt.accuracy?.toFixed(0) ?? 'N/A'}%
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+          {/* Performance Chart */}
+          <div className="pt-3 border-t border-gray-100 mt-3">
+            <h4 className="text-sm font-medium text-gray-700 mb-2">
+              Performance Trend:
+            </h4>
+            {performanceError ? (
+              <p className="text-xs text-red-600">Error loading chart.</p>
+            ) : !performanceHistory ? (
+              <div className="flex items-center justify-center h-32">
+                <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
+              </div>
+            ) : chartData.length > 0 ? (
+              <div className="h-40">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart
+                    data={chartData}
+                    margin={{ top: 5, right: 10, left: -25, bottom: 0 }}
+                  >
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fontSize: 10 }}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      yAxisId="right"
+                      orientation="right"
+                      domain={[0, 100]}
+                      tick={{ fontSize: 10 }}
+                      width={30}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <Tooltip
+                      content={<CustomTooltip />}
+                      wrapperStyle={{ zIndex: 10 }}
+                    />
+                    <Line
+                      yAxisId="right"
+                      type="monotone"
+                      dataKey="Accuracy"
+                      stroke="#3b82f6"
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 4 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500 text-center h-32 flex items-center justify-center">
+                No performance history for chart.
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+};
+// --- End GuideAnalyticCard Inner Component ---
+
 export default function DashboardPage() {
   const supabase = createClient();
-  const [selectedGuideIndex, setSelectedGuideIndex] = useState(0);
   const [studyTimeView, setStudyTimeView] = useState<'day' | 'week' | 'month'>(
     'week'
   );
@@ -387,35 +583,6 @@ export default function DashboardPage() {
     return enhancedStudyHours.total_hours === 0;
   }, [enhancedStudyHours]);
 
-  const selectedGuide = studyGuides?.[selectedGuideIndex];
-
-  // Find the selected guide's analytics from the all guide analytics data
-  const selectedGuideAnalytics = useMemo(() => {
-    if (
-      !allGuideAnalytics?.study_guides ||
-      !selectedGuide ||
-      allGuideAnalytics.study_guides.length === 0
-    )
-      return null;
-
-    return allGuideAnalytics.study_guides.find(
-      (guide: GuideAnalytics) => guide.study_guide_id === selectedGuide.id
-    );
-  }, [allGuideAnalytics, selectedGuide]);
-
-  // Individual guide fetch - keep as fallback if the all analytics endpoint fails
-  const { data: individualGuideAnalytics, error: guideAnalyticsError } = useSWR(
-    userId && selectedGuide?.id && !selectedGuideAnalytics
-      ? ENDPOINTS.guideAnalytics(userId, selectedGuide.id)
-      : null,
-    fetcher
-  );
-
-  // Use either the analytics from all guides or individual fetch
-  const guideAnalytics = selectedGuideAnalytics || individualGuideAnalytics;
-
-  const isLoading = !userData || !enhancedStudyHours || !testAnalytics;
-  const hasError = false; // We're handling errors gracefully now
   const userName =
     userData?.user_metadata?.full_name ||
     userData?.user_metadata?.name ||
@@ -423,52 +590,44 @@ export default function DashboardPage() {
     userData?.email?.split('@')[0] ||
     'Student';
 
-  const handlePreviousGuide = () => {
-    setSelectedGuideIndex((prev) =>
-      prev === 0 ? (studyGuides?.length || 1) - 1 : prev - 1
-    );
-  };
-
-  const handleNextGuide = () => {
-    setSelectedGuideIndex((prev) =>
-      prev === (studyGuides?.length || 1) - 1 ? 0 : prev + 1
-    );
-  };
-
-  // Add function to select a guide by ID
+  // Add function to select a guide by ID - KEEPING THIS for potential future use or other tabs
   const selectGuideById = useCallback(
     (guideId: string) => {
       console.log(`Trying to select guide with ID: ${guideId}`);
 
-      const guideIndex = studyGuides.findIndex(
-        (guide: DashboardGuide) => guide.id === guideId
-      );
+      // If studyGuides is potentially undefined, check before using findIndex
+      const guideIndex =
+        studyGuides?.findIndex(
+          (guide: DashboardGuide) => guide.id === guideId
+        ) ?? -1; // Default to -1 if studyGuides is null/undefined
 
       console.log(
-        `Found guide at index: ${guideIndex}, total guides: ${studyGuides.length}`
+        `Found guide at index: ${guideIndex}, total guides: ${studyGuides?.length ?? 0}`
       );
 
-      if (guideIndex >= 0) {
+      if (guideIndex >= 0 && studyGuides) {
+        // Check studyGuides again
         const guide = studyGuides[guideIndex];
         console.log(
           `Selecting guide: ${guide.title}, type: ${guide.type || 'regular'}`
         );
-        setSelectedGuideIndex(guideIndex);
+        // setSelectedGuideIndex(guideIndex); // Don't set index if not used
         return true;
-      }
-
-      console.log(`Guide not found in studyGuides list`);
-      // For debugging, log all available guide IDs
-      if (studyGuides.length > 0) {
-        console.log('Available guide IDs:');
-        studyGuides.forEach((g: DashboardGuide) =>
-          console.log(`- ${g.id} (${g.title})`)
-        );
+      } else {
+        // For debugging, log all available guide IDs
+        if (studyGuides && studyGuides.length > 0) {
+          console.log('Available guide IDs:');
+          studyGuides.forEach((g: DashboardGuide) =>
+            console.log(`- ${g.id} (${g.title})`)
+          );
+        } else {
+          console.log('studyGuides array is empty or undefined');
+        }
       }
 
       return false;
     },
-    [studyGuides]
+    [studyGuides] // Dependency array still uses studyGuides
   );
 
   // Try to match guides when allGuideAnalytics changes
@@ -500,7 +659,7 @@ export default function DashboardPage() {
 
         if (guideIndex >= 0) {
           console.log(`Found guide at index ${guideIndex}, selecting it`);
-          setSelectedGuideIndex(guideIndex);
+          // setSelectedGuideIndex(guideIndex); // Don't set index if not used
         } else {
           console.log(
             `Guide not found in studyGuides, something may be wrong with the filtering`
@@ -796,7 +955,7 @@ export default function DashboardPage() {
                 </p>
               </motion.div>
 
-              {isLoading ? (
+              {!dashboardData && !dashboardError ? (
                 <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
                   <Loader2 className="h-8 w-8 animate-spin text-[var(--color-primary)]" />
                   <p className="text-lg text-gray-600">
@@ -1157,7 +1316,7 @@ export default function DashboardPage() {
                               </CardTitle>
                             </CardHeader>
                             <CardContent className="p-4">
-                              {isLoading ? (
+                              {!testAnalytics && !dashboardError ? (
                                 <div className="flex flex-col items-center justify-center py-6">
                                   <Loader2 className="h-6 w-6 animate-spin text-[var(--color-primary)]" />
                                   <p className="mt-3 text-sm text-gray-600">
@@ -1174,7 +1333,11 @@ export default function DashboardPage() {
                                     <p className="text-xs text-gray-500">
                                       Completed on{' '}
                                       {new Date(
-                                        testAnalytics.latest_test.submitted_at
+                                        testAnalytics.latest_test.attempts?.[
+                                          testAnalytics.latest_test.attempts
+                                            .length - 1
+                                        ]?.submitted_at ??
+                                          testAnalytics.latest_test.submitted_at
                                       ).toLocaleDateString('en-US', {
                                         month: 'long',
                                         day: 'numeric',
@@ -1202,14 +1365,25 @@ export default function DashboardPage() {
                                       </h4>
                                       <div className="flex items-baseline">
                                         <span className="text-2xl font-bold text-gray-900">
-                                          {testAnalytics.latest_test.accuracy.toFixed(
-                                            0
-                                          )}
+                                          {(
+                                            testAnalytics.latest_test
+                                              .attempts?.[
+                                              testAnalytics.latest_test.attempts
+                                                .length - 1
+                                            ]?.accuracy ??
+                                            testAnalytics.latest_test.accuracy
+                                          ).toFixed(0)}
                                           %
                                         </span>
                                       </div>
                                       <p className="mt-1 text-xs text-gray-600">
-                                        ({testAnalytics.latest_test.score}/
+                                        (
+                                        {testAnalytics.latest_test.attempts?.[
+                                          testAnalytics.latest_test.attempts
+                                            .length - 1
+                                        ]?.score ??
+                                          testAnalytics.latest_test.score}
+                                        /
                                         {
                                           testAnalytics.latest_test
                                             .total_questions
@@ -1229,11 +1403,23 @@ export default function DashboardPage() {
                                       <div className="flex items-baseline">
                                         <span className="text-2xl font-bold text-gray-900">
                                           {formatTime(
-                                            testAnalytics.latest_test.time_taken
+                                            testAnalytics.latest_test
+                                              .attempts?.[
+                                              testAnalytics.latest_test.attempts
+                                                .length - 1
+                                            ]?.time_taken ??
+                                              testAnalytics.latest_test
+                                                .time_taken ??
+                                              0
                                           )}
                                         </span>
-                                        {testAnalytics.latest_test.time_taken <
-                                          60 && (
+                                        {(testAnalytics.latest_test.attempts?.[
+                                          testAnalytics.latest_test.attempts
+                                            .length - 1
+                                        ]?.time_taken ??
+                                          testAnalytics.latest_test
+                                            .time_taken ??
+                                          0) < 60 && (
                                           <span className="ml-1 text-xs text-gray-600">
                                             seconds
                                           </span>
@@ -1245,13 +1431,14 @@ export default function DashboardPage() {
                                       variants={fadeInUp}
                                       className="bg-white border hover:shadow-md transition-all duration-300 rounded-lg p-4 relative"
                                     >
-                                      <CheckCircle2 className="h-6 w-6 text-green-500 mb-2" />
+                                      <Activity className="h-6 w-6 text-blue-500 mb-2" />
                                       <h4 className="text-base font-semibold text-gray-700 mb-1">
-                                        Status
+                                        Total Attempts
                                       </h4>
                                       <div className="flex items-baseline">
                                         <span className="text-2xl font-bold text-gray-900 capitalize">
-                                          {testAnalytics.latest_test.status}
+                                          {testAnalytics.latest_test
+                                            .total_attempts ?? 1}
                                         </span>
                                       </div>
                                     </motion.div>
@@ -1275,20 +1462,42 @@ export default function DashboardPage() {
                     </TabsContent>
 
                     <TabsContent value="guide-specific">
-                      <GuideStats
-                        selectedGuide={selectedGuide || null}
-                        guideAnalytics={guideAnalytics || null}
-                        allGuideAnalytics={
-                          allGuideAnalytics?.study_guides || []
-                        }
-                        onPreviousGuide={handlePreviousGuide}
-                        onNextGuide={handleNextGuide}
-                        onSelectGuide={selectGuideById}
-                      />
+                      {!dashboardData?.guide_analytics && !dashboardError ? (
+                        <div className="flex justify-center items-center p-10">
+                          <Loader2 className="h-8 w-8 animate-spin text-[var(--color-primary)]" />
+                          <p className="ml-3 text-lg text-gray-600">
+                            Loading Guide Stats...
+                          </p>
+                        </div>
+                      ) : !dashboardData?.guide_analytics ||
+                        dashboardData.guide_analytics.length === 0 ? (
+                        <p className="text-gray-600 text-center py-10">
+                          No guide-specific analytics available yet. Complete
+                          some quizzes!
+                        </p>
+                      ) : (
+                        <motion.div
+                          variants={staggerContainer}
+                          initial="initial"
+                          animate="animate"
+                          className="grid gap-6 md:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3" // Adjust grid layout as needed
+                        >
+                          {/* Map over analytics and render the inner component */}
+                          {dashboardData.guide_analytics.map(
+                            (guideAnalytic: GuideAnalytics, index: number) => (
+                              <GuideAnalyticCard
+                                key={guideAnalytic.study_guide_id || index}
+                                guideAnalytic={guideAnalytic}
+                                userId={userId}
+                              />
+                            )
+                          )}
+                        </motion.div>
+                      )}
                     </TabsContent>
 
                     <TabsContent value="topic-mastery">
-                      {!rawMasteryData ? (
+                      {!rawMasteryData && !dashboardError ? (
                         <div className="flex justify-center items-center p-10">
                           <Loader2 className="h-8 w-8 animate-spin text-[var(--color-primary)]" />
                           <p className="ml-3 text-lg text-gray-600">
