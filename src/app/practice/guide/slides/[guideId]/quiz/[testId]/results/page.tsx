@@ -735,13 +735,13 @@ const SlidesQuizResultsPage: React.FC = () => {
                   </Card>
                 </div>
 
-                {/* Add Remediation Button */}
+                {/* Conditionally render Remediation Button (Added) */}
                 {(results.needs_remediation || results.remediation_viewed) &&
-                  getSubmissionId() &&
+                  (results?.submission_id || results?._id) && // Check for either ID field
                   guideId && (
                     <div className="mb-6 text-center">
                       <Link
-                        href={`/practice/guide/slides/${guideId}/quiz/${testId}/remediation?submission=${getSubmissionId()}`}
+                        href={`/practice/guide/slides/${guideId}/quiz/${testId}/remediation?submission=${results.submission_id || results._id}&study_guide_id=${guideId}`}
                         passHref
                       >
                         <Button variant="secondary" size="lg">
@@ -768,13 +768,6 @@ const SlidesQuizResultsPage: React.FC = () => {
                       </div>
                     </div>
                   ) : results.needs_remediation ? (
-                    <RemediationChoice
-                      guideId={guideId}
-                      testId={testId}
-                      submissionId={getSubmissionId()}
-                      attemptNumber={results.attempt_number || 3}
-                    />
-                  ) : results.review_recommended ? (
                     <div className="bg-yellow-50 border border-yellow-200 p-6 rounded-lg">
                       <div className="flex items-start gap-4">
                         <AlertTriangle className="h-8 w-8 text-yellow-500 flex-shrink-0" />
@@ -799,7 +792,7 @@ const SlidesQuizResultsPage: React.FC = () => {
                             <Button
                               onClick={() =>
                                 router.push(
-                                  `/practice/guide/slides/${guideId}/quiz/${testId}/review?submission=${getSubmissionId()}`
+                                  `/practice/guide/slides/${guideId}/quiz/${testId}/remediation?submission=${results.submission_id || results._id}&study_guide_id=${guideId}`
                                 )
                               }
                               className="bg-yellow-500 hover:bg-yellow-600 text-white"

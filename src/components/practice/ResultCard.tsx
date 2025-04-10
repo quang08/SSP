@@ -358,25 +358,7 @@ export const ResultCard = ({
             </div>
 
             <div className="mt-5 pt-4 border-t border-gray-200">
-              <button
-                onClick={() =>
-                  document
-                    .getElementById(`chat-${questionId}`)
-                    ?.classList.toggle('hidden')
-                }
-                className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-700 hover:text-gray-900"
-              >
-                <MessageCircle className="w-4 h-4" />
-                Chat with AI
-              </button>
-
-              <div id={`chat-${questionId}`} className="hidden mt-3">
-                <AIChat
-                  userId={userId}
-                  testId={testId}
-                  questionId={questionId}
-                />
-              </div>
+              <AIChat userId={userId} testId={testId} questionId={questionId} />
             </div>
           </div>
         </div>
