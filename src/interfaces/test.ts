@@ -101,6 +101,7 @@ export interface QuizQuestion {
 }
 
 export interface QuizResults {
+  _id: string;
   submission_id: string;
   user_id: string;
   test_id: string;

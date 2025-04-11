@@ -20,6 +20,7 @@ import {
   CheckCircle2,
   Clock,
   RefreshCw,
+  BookOpen,
 } from 'lucide-react';
 import { AIChat } from '@/components/practice/AIChat';
 import { QuizQuestion, QuizResults } from '@/interfaces/test';
@@ -208,23 +209,49 @@ interface ConsolidatedResultsResponse {
     pass_threshold: number;
     mastery_threshold: number;
   };
+  mastery_threshold?: number;
   can_retry?: boolean;
   attempts_remaining?: number;
   topic_mastery?: {
     current_score: number;
     is_mastered: boolean;
   };
+  attempt_number?: number;
+  mastered?: boolean;
+  needs_remediation?: boolean;
 }
 
 const QuizResultsPage: React.FC = () => {
   const params = useParams();
   const testId = typeof params.testId === 'string' ? params.testId : '';
-  const title = typeof params.title === 'string' ? params.title : '';
+  const rawTitle = typeof params.title === 'string' ? params.title : '';
   const router = useRouter();
+
+  // Fully decode the title parameter from the URL
+  const title = useMemo(() => {
+    let decoded = rawTitle;
+    try {
+      // Keep decoding until the string doesn't change anymore
+      while (true) {
+        const nextDecoded = decodeURIComponent(decoded);
+        if (nextDecoded === decoded) {
+          break;
+        }
+        decoded = nextDecoded;
+      }
+    } catch (e) {
+      console.error('Error decoding title param:', e);
+      // Fallback to the raw title if decoding fails unexpectedly
+      return rawTitle;
+    }
+    return decoded;
+  }, [rawTitle]);
 
   // Get submission ID from URL query parameters
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [retryLoading, setRetryLoading] = useState<boolean>(false);
+  const supabase = createClient();
 
   // State for additional data from the consolidated endpoint
   const [masteryThresholds, setMasteryThresholds] = useState<{
@@ -278,7 +305,17 @@ const QuizResultsPage: React.FC = () => {
     if (data && typeof data === 'object' && 'submission' in data) {
       // It's the consolidated response
       const consolidatedData = data as ConsolidatedResultsResponse;
-      setMasteryThresholds(consolidatedData.mastery_thresholds || null);
+
+      // Handle both mastery_thresholds object and direct mastery_threshold field
+      if (consolidatedData.mastery_thresholds) {
+        setMasteryThresholds(consolidatedData.mastery_thresholds);
+      } else if (consolidatedData.mastery_threshold !== undefined) {
+        setMasteryThresholds({
+          pass_threshold: consolidatedData.mastery_threshold * 0.6, // Set pass threshold to 60% of mastery
+          mastery_threshold: consolidatedData.mastery_threshold,
+        });
+      }
+
       setCanRetry(consolidatedData.can_retry || false);
       setAttemptsRemaining(consolidatedData.attempts_remaining || 0);
       setTopicMastery(consolidatedData.topic_mastery || null);
@@ -289,43 +326,107 @@ const QuizResultsPage: React.FC = () => {
   const results = useMemo(() => {
     if (!data) return null;
 
+    let submissionData: QuizResults | null = null;
+
     if (typeof data === 'object' && 'submission' in data) {
-      return (data as ConsolidatedResultsResponse).submission;
+      submissionData = (data as ConsolidatedResultsResponse).submission;
+    } else {
+      // Handle potential older format directly
+      submissionData = data as QuizResults;
     }
 
-    return data as QuizResults;
+    if (!submissionData) return null;
+
+    // --- CORRECTED LOGIC TO GET QUESTIONS ---
+    // Prioritize questions from the latest attempt in the attempts array
+    let questions: QuizQuestion[] = [];
+    if (submissionData.attempts && submissionData.attempts.length > 0) {
+      const latestAttempt =
+        submissionData.attempts[submissionData.attempts.length - 1];
+      questions = latestAttempt.questions || [];
+    } else if (submissionData.questions) {
+      // Fallback for older structure or if attempts array is missing/empty
+      questions = submissionData.questions;
+    }
+    // --- END CORRECTION ---
+
+    // Return the submission data with the correctly extracted questions
+    return {
+      ...submissionData,
+      questions: questions, // Ensure questions array is correctly assigned
+    };
   }, [data]);
 
   // Handle retry
   const handleRetry = async () => {
-    if (!userId || !testId) return;
+    // Use results?._id or results?.result_id as the primary source for previous_attempt_id
+    const actualSubmissionId = results?._id || (results as any)?.result_id;
 
+    if (!userId || !testId || !results?.study_guide_id || !actualSubmissionId) {
+      toast.error(
+        'Cannot retry test: Missing user, test, study guide, or submission information.'
+      );
+      console.error('Retry Pre-check Failed', {
+        userId,
+        testId,
+        guideId: results?.study_guide_id,
+        actualSubmissionId,
+      });
+      return;
+    }
+
+    setRetryLoading(true);
     try {
-      const response = await fetchWithAuth(ENDPOINTS.retryTest, {
+      // Use fetchWithAuth for consistency if needed, or keep direct fetch if preferred
+      const token = await supabase.auth
+        .getSession()
+        .then((res) => res.data.session?.access_token);
+      const response = await fetch(ENDPOINTS.retryTest, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           user_id: userId,
           test_id: testId,
+          study_guide_id: results.study_guide_id,
+          previous_attempt_id: actualSubmissionId, // Pass the correct ID
         }),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to retry test');
+        const errorData = await response.json();
+        console.error('Retry error response:', errorData);
+        throw new Error(errorData.message || 'Failed to process retry request');
       }
 
-      toast.success('Test retry initialized. Redirecting to quiz page...');
+      const retryData = await response.json();
 
-      // Navigate back to quiz page
+      if (!retryData.can_retry) {
+        toast.warning(
+          retryData.message || 'Cannot retry this test at the moment.'
+        );
+        setRetryLoading(false);
+        return;
+      }
+
+      toast.success(
+        retryData.message || 'Test retry initialized. Redirecting...'
+      );
+
+      // Navigate back to quiz page with retry parameters
       router.push(
-        `/practice/guide/${encodeURIComponent(title)}/quiz/${testId}`
+        `/practice/guide/${encodeURIComponent(title)}/quiz/${testId}?retry=true&attempt=${retryData.attempt_number}&previous=${actualSubmissionId}`
       );
     } catch (err) {
-      toast.error('Failed to initialize retry. Please try again.');
+      toast.error(
+        `Failed to initialize retry: ${err instanceof Error ? err.message : 'Unknown error'}`
+      );
       console.error('Error retrying test:', err);
+      setRetryLoading(false); // Ensure loading state is reset on error
     }
+    // No need for finally block if navigation happens on success
   };
 
   return (
@@ -334,7 +435,7 @@ const QuizResultsPage: React.FC = () => {
         <Header />
         <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <Link
-            href={`/practice/guide/${decodeURIComponent(title)}`}
+            href={`/practice/guide/${title}`}
             className="inline-flex items-center text-gray-600 hover:text-gray-900 mb-8"
           >
             <ChevronLeft className="h-4 w-4 mr-1" />
@@ -425,7 +526,7 @@ const QuizResultsPage: React.FC = () => {
                       </div>
                       <div className="flex items-baseline">
                         <span className="text-4xl font-bold text-gray-900">
-                          {results.accuracy.toFixed(0)}%
+                          {(results.accuracy || 0).toFixed(0)}%
                         </span>
                       </div>
                       {masteryThresholds && (
@@ -453,10 +554,32 @@ const QuizResultsPage: React.FC = () => {
                       </div>
                       <div className="flex items-baseline">
                         <span className="text-4xl font-bold text-gray-900">
-                          {Math.round(results.time_taken)}
+                          {Math.round(results.time_taken || 0)}
                         </span>
                         <span className="ml-2 text-gray-600">seconds</span>
                       </div>
+                      {/* Add Retry button conditionally */}
+                      {results.can_retry && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleRetry}
+                          disabled={retryLoading}
+                          className="mt-4 w-full text-blue-600 border-blue-300 hover:bg-blue-50"
+                        >
+                          {retryLoading ? (
+                            <>
+                              <span className="mr-2">Loading...</span>
+                              <RefreshCw className="h-4 w-4 animate-spin" />
+                            </>
+                          ) : (
+                            <>
+                              <RefreshCw className="h-4 w-4 mr-2" />
+                              Retry Test ({results.attempts_remaining} left)
+                            </>
+                          )}
+                        </Button>
+                      )}
                     </CardContent>
                   </Card>
 
@@ -483,21 +606,26 @@ const QuizResultsPage: React.FC = () => {
                               : 'Incomplete'}
                         </span>
                       </div>
-
-                      {/* Add retry button if available */}
-                      {canRetry && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={handleRetry}
-                          className="mt-2 w-full"
-                        >
-                          Retry Test ({attemptsRemaining} left)
-                        </Button>
-                      )}
                     </CardContent>
                   </Card>
                 </div>
+
+                {/* Conditionally render Remediation Button */}
+                {(results.needs_remediation || results.remediation_viewed) &&
+                  (results?._id || (results as any)?.result_id) &&
+                  results?.study_guide_id && (
+                    <div className="mb-6 text-center">
+                      <Link
+                        href={`/practice/guide/${encodeURIComponent(title)}/quiz/${testId}/remediation?submission=${results._id || (results as any).result_id}&study_guide_id=${results.study_guide_id}`}
+                        passHref
+                      >
+                        <Button variant="secondary" size="lg">
+                          <BookOpen className="mr-2 h-5 w-5" />
+                          View Remediation Material
+                        </Button>
+                      </Link>
+                    </div>
+                  )}
 
                 {/* Add topic mastery info if available */}
                 {topicMastery && (
@@ -510,7 +638,7 @@ const QuizResultsPage: React.FC = () => {
                           </h3>
                           <p className="text-sm text-gray-600">
                             Current mastery level:{' '}
-                            {topicMastery.current_score.toFixed(0)}%
+                            {(topicMastery.current_score || 0).toFixed(0)}%
                           </p>
                         </div>
                         <div
@@ -530,7 +658,7 @@ const QuizResultsPage: React.FC = () => {
                 )}
 
                 <div className="space-y-6">
-                  {results.questions.map((question, index) => (
+                  {results.questions?.map((question, index) => (
                     <ResultCard
                       key={question.question_id}
                       questionNumber={index + 1}

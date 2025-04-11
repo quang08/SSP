@@ -85,6 +85,7 @@ interface TestStatus {
   test_id: string;
   is_unlocked: boolean;
   prerequisites?: string[];
+  latest_submission_id?: string;
 }
 
 const container = {
@@ -147,6 +148,9 @@ const SlidesGuidePage: React.FC = () => {
     >
   >({});
   const [userId, setUserId] = useState<string | null>(null);
+  const [latestSubmissionIds, setLatestSubmissionIds] = useState<
+    Record<string, string>
+  >({});
 
   // Get the user ID from Supabase
   useEffect(() => {
@@ -210,19 +214,24 @@ const SlidesGuidePage: React.FC = () => {
         });
         setTopicMasteryStatus(topicStatus);
 
-        // 5. Set test lock status
+        // 5. Set test lock status and latest submission IDs
         const lockStatus: Record<string, boolean> = {};
         const prereqStatus: Record<string, string[]> = {};
+        const submissionIds: Record<string, string> = {};
 
         (data.test_statuses || []).forEach((status: TestStatus) => {
           if (status.test_id) {
             lockStatus[status.test_id] = !status.is_unlocked;
             prereqStatus[status.test_id] = status.prerequisites || [];
+            if (status.latest_submission_id) {
+              submissionIds[status.test_id] = status.latest_submission_id;
+            }
           }
         });
 
         setLockedTests(lockStatus);
         setTestPrerequisites(prereqStatus);
+        setLatestSubmissionIds(submissionIds);
       },
     }
   );
@@ -304,11 +313,22 @@ const SlidesGuidePage: React.FC = () => {
     testId: string,
     topicTitle: string
   ): Promise<void> => {
-    // If test is already completed, just show the results
+    // If test is already completed, navigate using the specific submission ID
     if (completedTests.has(testId)) {
-      router.push(
-        `/practice/guide/slides/${encodeURIComponent(guideId)}/quiz/${testId}/results`
-      );
+      const submissionId = latestSubmissionIds[testId];
+      if (submissionId) {
+        router.push(
+          `/practice/guide/slides/${encodeURIComponent(guideId)}/quiz/${testId}/results?submission=${submissionId}`
+        );
+      } else {
+        // Fallback if submission ID isn't found (shouldn't happen if backend provides it)
+        console.warn(
+          `Submission ID not found for completed test: ${testId}. Navigating without specific ID.`
+        );
+        router.push(
+          `/practice/guide/slides/${encodeURIComponent(guideId)}/quiz/${testId}/results`
+        );
+      }
       return;
     }
 
@@ -738,133 +758,135 @@ const SlidesGuidePage: React.FC = () => {
                                                 (
                                                   test: SlidePracticeTest,
                                                   testIndex: number
-                                                ) => (
-                                                  <div
-                                                    key={testIndex}
-                                                    id={`test-${test.practice_test_id}`}
-                                                    className={cn(
-                                                      'rounded-lg border p-3 transition-all',
-                                                      lockedTests[
-                                                        test.practice_test_id
-                                                      ]
-                                                        ? 'border-gray-300 bg-gray-50 cursor-not-allowed'
-                                                        : 'border-gray-200 hover:border-blue-300 cursor-pointer'
-                                                    )}
-                                                    onClick={() => {
-                                                      // Only allow click if the test is not locked
-                                                      if (
-                                                        !lockedTests[
-                                                          test.practice_test_id
-                                                        ]
-                                                      ) {
-                                                        handleQuizClick(
-                                                          test.practice_test_id,
-                                                          topic.title
-                                                        );
-                                                      } else {
-                                                        // For locked tests, show a toast notification
-                                                        toast.error(
-                                                          'Prerequisites Required',
-                                                          {
-                                                            description:
-                                                              'You need to master the prerequisite topics before taking this test.',
-                                                            duration: 4000,
-                                                          }
-                                                        );
-                                                      }
-                                                    }}
-                                                  >
-                                                    <div className="flex items-center justify-between">
-                                                      <div className="flex items-center gap-2">
-                                                        {completedTests.has(
-                                                          test.practice_test_id
-                                                        ) ? (
-                                                          <CheckCircle className="h-4 w-4 text-green-500" />
-                                                        ) : lockedTests[
-                                                            test
-                                                              .practice_test_id
-                                                          ] ? (
-                                                          <TooltipProvider>
-                                                            <Tooltip>
-                                                              <TooltipTrigger>
-                                                                <LockIcon className="h-4 w-4 text-gray-500" />
-                                                              </TooltipTrigger>
-                                                              <TooltipContent className="w-64 p-3">
-                                                                <p className="font-medium text-sm mb-2">
-                                                                  Required
-                                                                  Prerequisites:
-                                                                </p>
-                                                                <ul className="list-disc list-inside space-y-1 text-xs">
-                                                                  {testPrerequisites[
-                                                                    test
-                                                                      .practice_test_id
-                                                                  ]?.map(
-                                                                    (
-                                                                      prereq,
-                                                                      i
-                                                                    ) => (
-                                                                      <li
-                                                                        key={i}
-                                                                        className="text-gray-700"
-                                                                      >
-                                                                        {prereq}
-                                                                        {topicMasteryStatus[
-                                                                          prereq
-                                                                        ] && (
-                                                                          <span
-                                                                            className={`ml-1 text-xs ${topicMasteryStatus[prereq].isMastered ? 'text-green-600' : 'text-amber-600'}`}
-                                                                          >
-                                                                            (
-                                                                            {topicMasteryStatus[
-                                                                              prereq
-                                                                            ]
-                                                                              .isMastered
-                                                                              ? 'Mastered'
-                                                                              : 'Not Mastered'}
-                                                                            )
-                                                                          </span>
-                                                                        )}
-                                                                      </li>
-                                                                    )
-                                                                  )}
-                                                                </ul>
-                                                              </TooltipContent>
-                                                            </Tooltip>
-                                                          </TooltipProvider>
-                                                        ) : (
-                                                          <PlayCircle className="h-4 w-4 text-blue-500" />
-                                                        )}
-                                                        <span
-                                                          className={cn(
-                                                            'font-medium text-sm',
-                                                            lockedTests[
-                                                              test
-                                                                .practice_test_id
-                                                            ] && 'text-gray-500'
+                                                ) => {
+                                                  const isCompleted =
+                                                    completedTests.has(
+                                                      test.practice_test_id
+                                                    );
+                                                  const isLocked =
+                                                    lockedTests[
+                                                      test.practice_test_id
+                                                    ];
+                                                  const submissionId =
+                                                    latestSubmissionIds[
+                                                      test.practice_test_id
+                                                    ];
+
+                                                  return (
+                                                    <div
+                                                      key={testIndex}
+                                                      id={`test-${test.practice_test_id}`}
+                                                      className={cn(
+                                                        'rounded-lg border p-3 transition-all',
+                                                        isLocked
+                                                          ? 'border-gray-300 bg-gray-50 cursor-not-allowed'
+                                                          : 'border-gray-200 hover:border-blue-300 cursor-pointer'
+                                                      )}
+                                                      onClick={() => {
+                                                        // Only allow click if the test is not locked
+                                                        if (!isLocked) {
+                                                          handleQuizClick(
+                                                            test.practice_test_id,
+                                                            topic.title
+                                                          );
+                                                        } else {
+                                                          // For locked tests, show a toast notification
+                                                          toast.error(
+                                                            'Prerequisites Required',
+                                                            {
+                                                              description:
+                                                                'You need to master the prerequisite topics before taking this test.',
+                                                              duration: 4000,
+                                                            }
+                                                          );
+                                                        }
+                                                      }}
+                                                    >
+                                                      <div className="flex items-center justify-between">
+                                                        <div className="flex items-center gap-2">
+                                                          {isCompleted ? (
+                                                            <CheckCircle className="h-4 w-4 text-green-500" />
+                                                          ) : isLocked ? (
+                                                            <TooltipProvider>
+                                                              <Tooltip>
+                                                                <TooltipTrigger>
+                                                                  <LockIcon className="h-4 w-4 text-gray-500" />
+                                                                </TooltipTrigger>
+                                                                <TooltipContent className="w-64 p-3">
+                                                                  <p className="font-medium text-sm mb-2">
+                                                                    Required
+                                                                    Prerequisites:
+                                                                  </p>
+                                                                  <ul className="list-disc list-inside space-y-1 text-xs">
+                                                                    {testPrerequisites[
+                                                                      test
+                                                                        .practice_test_id
+                                                                    ]?.map(
+                                                                      (
+                                                                        prereq,
+                                                                        i
+                                                                      ) => (
+                                                                        <li
+                                                                          key={
+                                                                            i
+                                                                          }
+                                                                          className="text-gray-700"
+                                                                        >
+                                                                          {
+                                                                            prereq
+                                                                          }
+                                                                          {topicMasteryStatus[
+                                                                            prereq
+                                                                          ] && (
+                                                                            <span
+                                                                              className={`ml-1 text-xs ${topicMasteryStatus[prereq].isMastered ? 'text-green-600' : 'text-amber-600'}`}
+                                                                            >
+                                                                              (
+                                                                              {topicMasteryStatus[
+                                                                                prereq
+                                                                              ]
+                                                                                .isMastered
+                                                                                ? 'Mastered'
+                                                                                : 'Not Mastered'}
+                                                                              )
+                                                                            </span>
+                                                                          )}
+                                                                        </li>
+                                                                      )
+                                                                    )}
+                                                                  </ul>
+                                                                </TooltipContent>
+                                                              </Tooltip>
+                                                            </TooltipProvider>
+                                                          ) : (
+                                                            <PlayCircle className="h-4 w-4 text-blue-500" />
                                                           )}
-                                                        >
-                                                          {completedTests.has(
-                                                            test.practice_test_id
-                                                          )
-                                                            ? 'View Results'
-                                                            : lockedTests[
-                                                                  test
-                                                                    .practice_test_id
-                                                                ]
-                                                              ? 'Locked (Prerequisites Required)'
-                                                              : 'Take Quiz'}
+                                                          <span
+                                                            className={cn(
+                                                              'font-medium text-sm',
+                                                              isLocked &&
+                                                                'text-gray-500'
+                                                            )}
+                                                          >
+                                                            {isCompleted
+                                                              ? 'View Results' // Always show 'View Results' for completed
+                                                              : isLocked
+                                                                ? 'Locked (Prerequisites Required)'
+                                                                : 'Take Quiz'}
+                                                          </span>
+                                                        </div>
+                                                        <span className="text-xs text-gray-500">
+                                                          {(test.questions
+                                                            .length || 0) +
+                                                            (test.short_answer
+                                                              ?.length ||
+                                                              0)}{' '}
+                                                          questions
                                                         </span>
                                                       </div>
-                                                      <span className="text-xs text-gray-500">
-                                                        {(test.questions
-                                                          .length || 0) +
-                                                          (test.short_answer
-                                                            ?.length || 0)}{' '}
-                                                        questions
-                                                      </span>
                                                     </div>
-                                                  </div>
-                                                )
+                                                  );
+                                                }
                                               )}
                                             </div>
                                           </div>

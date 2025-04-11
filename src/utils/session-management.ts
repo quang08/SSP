@@ -117,7 +117,7 @@ export const initSessionActivity = () => {
       // Use the 'fetch' API with keepalive option to ensure the request completes
       // even when the page is being unloaded
       navigator.sendBeacon(
-        `${ENDPOINTS.endSession}?sessionId=${sessionId}`,
+        ENDPOINTS.endSession,
         JSON.stringify({ session_id: sessionId })
       );
 
@@ -150,38 +150,60 @@ export const initSessionActivity = () => {
 };
 
 // Manually end the active session
-export const endActiveSession = async () => {
+export const endActiveSession = async (sessionId: string) => {
   try {
-    isSessionActive = false;
-
-    if (inactivityTimer) {
-      clearTimeout(inactivityTimer);
-      inactivityTimer = null;
-    }
-
-    const sessionId = localStorage.getItem('session_id');
-    if (!sessionId) return;
-
-    const supabase = createClient();
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-
-    if (!token) {
-      localStorage.removeItem('session_id');
-      return;
-    }
-
-    await fetch(ENDPOINTS.endSession, {
+    const response = await fetch(ENDPOINTS.endSession, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ session_id: sessionId }),
     });
 
-    localStorage.removeItem('session_id');
+    if (!response.ok) {
+      console.error('Failed to end session');
+    }
   } catch (error) {
-    console.error('Error ending active session:', error);
+    console.error('Error ending session:', error);
   }
+};
+
+/**
+ * Handle inactive session (show warning and end session)
+ * @param sessionId The session ID to end
+ */
+export const showInactivityWarning = async (sessionId: string) => {
+  let countdownTimer: NodeJS.Timeout;
+
+  const handleContinue = () => {
+    clearTimeout(countdownTimer);
+    document.removeEventListener('mousemove', handleContinue);
+    document.removeEventListener('keydown', handleContinue);
+    document.removeEventListener('click', handleContinue);
+    if (warningToast) toast.dismiss(warningToast);
+  };
+
+  // Show warning with auto-dismiss after 60 seconds
+  const warningToast = toast.warning(
+    'Your session is about to end due to inactivity. Move the mouse or press a key to continue.',
+    {
+      duration: 60000, // 60 seconds
+      onDismiss: async () => {
+        // End the session
+        await endActiveSession(sessionId);
+        toast.error('Your session has ended due to inactivity.', {
+          duration: 5000,
+        });
+        // Redirect to home page after 5 seconds
+        setTimeout(() => {
+          window.location.href = '/';
+        }, 5000);
+      },
+    }
+  );
+
+  // Set up event listeners to cancel the warning
+  document.addEventListener('mousemove', handleContinue);
+  document.addEventListener('keydown', handleContinue);
+  document.addEventListener('click', handleContinue);
 };

@@ -16,8 +16,6 @@ import {
   RefreshCw,
   ThumbsUp,
   ThumbsDown,
-  ArrowRight,
-  Check,
   Eye,
   AlertTriangle,
 } from 'lucide-react';
@@ -32,7 +30,7 @@ import {
   retryTest,
 } from '@/utils/remediation';
 
-// MathJax configuration
+// MathJax configuration (same as slides version)
 const mathJaxConfig = {
   loader: {
     load: [
@@ -63,7 +61,7 @@ const mathJaxConfig = {
   options: { enableMenu: false },
 };
 
-// Helper function to render with KaTeX
+// Helper function to render with KaTeX (same as slides version)
 const renderWithKatex = (
   text: string,
   displayMode: boolean = false
@@ -81,78 +79,59 @@ const renderWithKatex = (
   }
 };
 
-// Helper function to determine if text is simple LaTeX
+// Helper function to determine if text is simple LaTeX (same as slides version)
 const isSimpleLatex = (text: string): boolean => {
-  // Check if text contains only basic LaTeX commands and symbols
   const simpleLatexPattern = /^[a-zA-Z0-9\s\+\-\*\/\^\{\}\(\)\[\]\_\$\\]+$/;
   return simpleLatexPattern.test(text);
 };
 
-// Helper function to render text with LaTeX
+// Helper function to render text with LaTeX (same as slides version)
 const renderTextWithLatex = (text: string) => {
   if (!text) return null;
 
-  // First, unescape all double backslashes
   let processedText = text.replace(/\\\\/g, '\\');
-
-  // Handle special LaTeX commands and symbols
   processedText = processedText
-    // Handle \mathbb{R} notation
     .replace(/\\mathbb\{([^}]+)\}/g, (_, p1) => `\\mathbb{${p1}}`)
-    // Handle subscripts and superscripts with multiple characters
     .replace(/_{([^}]+)}/g, '_{$1}')
     .replace(/\^{([^}]+)}/g, '^{$1}')
-    // Handle special spacing around operators
     .replace(/\\sum(?![a-zA-Z])/g, '\\sum\\limits')
     .replace(/\\int(?![a-zA-Z])/g, '\\int\\limits')
     .replace(/\\prod(?![a-zA-Z])/g, '\\prod\\limits')
-    // Handle spacing around vertical bars and other delimiters
     .replace(/\|/g, '\\,|\\,')
     .replace(/\\mid/g, '\\,|\\,')
-    // Handle matrix transpose
     .replace(/\\T(?![a-zA-Z])/g, '^{\\intercal}')
-    // Handle common statistical notation
     .replace(/\\Var/g, '\\operatorname{Var}')
     .replace(/\\Bias/g, '\\operatorname{Bias}')
     .replace(/\\MSE/g, '\\operatorname{MSE}')
     .replace(/\\EPE/g, '\\operatorname{EPE}')
-    // Handle escaped curly braces
     .replace(/\\\{/g, '{')
     .replace(/\\\}/g, '}');
 
-  // Split text by existing LaTeX delimiters while preserving the delimiters
   const parts = processedText.split(
     /(\$\$[\s\S]*?\$\$|\$[^$\n]*?\$|\\\([^)]*?\\\)|\\\[[\s\S]*?\\\])/g
   );
 
-  // Generate a unique key for each part
   const hashString = (str: string): string => {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
       const char = str.charCodeAt(i);
       hash = (hash << 5) - hash + char;
-      hash = hash & hash; // Convert to 32-bit integer
+      hash = hash & hash;
     }
-    return hash.toString(36); // Convert to base-36 for shorter strings
+    return hash.toString(36);
   };
 
   return parts.map((part, index) => {
-    // Generate a more unique key using content hash
     const key = `${index}-${hashString(part)}`;
-
     if (
       part.startsWith('$') ||
       part.startsWith('\\(') ||
       part.startsWith('\\[')
     ) {
-      // Remove the delimiters
       let latex = part
         .replace(/^\$\$|\$\$$|^\$|\$$|^\\\(|\\\)$|^\\\[|\\\]$/g, '')
         .trim();
-
       const isDisplay = part.startsWith('$$') || part.startsWith('\\[');
-
-      // Use KaTeX for simple expressions and MathJax for complex ones
       if (isSimpleLatex(latex)) {
         return (
           <span
@@ -163,20 +142,14 @@ const renderTextWithLatex = (text: string) => {
           />
         );
       }
-
-      // Wrap the LaTeX in appropriate delimiters for MathJax
       latex = isDisplay ? `$$${latex}$$` : `$${latex}$`;
-
       return (
         <MathJax key={key} inline={!isDisplay} dynamic={true}>
           {latex}
         </MathJax>
       );
     }
-
-    // Check if the part contains any LaTeX-like content
     if (part.includes('\\') || /[_^{}]/.test(part)) {
-      // Use KaTeX for simple expressions
       if (isSimpleLatex(part)) {
         return (
           <span
@@ -187,20 +160,17 @@ const renderTextWithLatex = (text: string) => {
           />
         );
       }
-
-      // Use MathJax for complex expressions
       return (
         <MathJax key={key} inline={true} dynamic={true}>
           {`$${part}$`}
         </MathJax>
       );
     }
-
     return <span key={key}>{part}</span>;
   });
 };
 
-// Define interfaces for remediation content
+// Define interfaces for remediation content (same as slides version)
 interface RemediationContent {
   remediation_id: string;
   content: string;
@@ -218,12 +188,13 @@ interface RemediationContent {
   mastery_required: number;
 }
 
-const RemediationPage: React.FC = () => {
+const BookRemediationPage: React.FC = () => {
   const params = useParams();
   const searchParams = useSearchParams();
   const submissionId = searchParams.get('submission') || '';
+  const studyGuideId = searchParams.get('study_guide_id') || ''; // Get study_guide_id from query params
   const testId = typeof params.testId === 'string' ? params.testId : '';
-  const guideId = typeof params.guideId === 'string' ? params.guideId : '';
+  const title = typeof params.title === 'string' ? params.title : ''; // Use title for book guides
   const router = useRouter();
   const supabase = createClient();
 
@@ -237,12 +208,7 @@ const RemediationPage: React.FC = () => {
 
   useEffect(() => {
     const fetchRemediation = async (): Promise<void> => {
-      if (!testId || !submissionId) {
-        setError('Missing test ID or submission ID from URL.');
-        toast.error('Missing necessary information to load remediation.');
-        setLoading(false);
-        return;
-      }
+      if (!testId || !submissionId) return;
 
       try {
         setLoading(true);
@@ -259,7 +225,6 @@ const RemediationPage: React.FC = () => {
           .then((res) => res.data.session?.access_token);
 
         // Make the remediation request with all required fields
-        // The backend will extract study_guide_id and topic_id from the submission
         const response = await fetch(ENDPOINTS.getRemediation, {
           method: 'POST',
           headers: {
@@ -270,11 +235,15 @@ const RemediationPage: React.FC = () => {
             user_id: userId,
             test_id: testId,
             previous_attempt_id: submissionId,
+            study_guide_id: studyGuideId, // Pass study_guide_id explicitly
           }),
         });
 
         if (!response.ok) {
-          throw new Error('Failed to fetch remediation content');
+          const errorData = await response.json();
+          throw new Error(
+            errorData.message || 'Failed to fetch remediation content'
+          );
         }
 
         const data = await response.json();
@@ -289,10 +258,10 @@ const RemediationPage: React.FC = () => {
       }
     };
 
-    fetchRemediation();
-  }, [testId, submissionId, guideId]);
+    void fetchRemediation();
+  }, [testId, submissionId, studyGuideId]); // Add studyGuideId dependency
 
-  // Mark remediation as viewed when component mounts
+  // Mark remediation as viewed when component mounts (same as slides)
   useEffect(() => {
     const markAsViewed = async () => {
       if (remediation?.remediation_id && !remediation.viewed && !viewMarked) {
@@ -304,8 +273,8 @@ const RemediationPage: React.FC = () => {
       }
     };
 
-    markAsViewed();
-  }, [remediation]);
+    void markAsViewed();
+  }, [remediation, viewMarked]);
 
   const handleRating = async (wasHelpful: boolean) => {
     if (!remediation?.remediation_id) return;
@@ -327,18 +296,13 @@ const RemediationPage: React.FC = () => {
     }
   };
 
-  // Get the submission ID directly from the URL search parameters for retry
-  const currentSubmissionId = searchParams.get('submission') || '';
-
   const handleRetry = async () => {
-    if (!testId || !currentSubmissionId || !guideId) {
-      toast.error(
-        'Cannot retry: Missing required information (Test ID, Submission ID, or Guide ID).'
-      );
+    if (!testId || !submissionId || !studyGuideId) {
+      // Check for studyGuideId
+      toast.error('Missing necessary information to retry the test.');
       return;
     }
-    // Pass the submission ID obtained from the URL parameters
-    await retryTest(testId, currentSubmissionId, guideId);
+    await retryTest(testId, submissionId, studyGuideId); // Pass studyGuideId
   };
 
   return (
@@ -346,8 +310,9 @@ const RemediationPage: React.FC = () => {
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
         <Header />
         <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          {/* Adjusted Backlink */}
           <Link
-            href={`/practice/guide/slides/${encodeURIComponent(guideId)}`}
+            href={`/practice/guide/${encodeURIComponent(title)}`}
             className="inline-flex items-center text-gray-600 hover:text-gray-900 mb-8"
           >
             <ChevronLeft className="h-4 w-4 mr-1" />
@@ -399,7 +364,8 @@ const RemediationPage: React.FC = () => {
                   </p>
                   <p className="text-sm text-blue-600 mb-4">
                     <span className="font-medium">Required for mastery:</span>{' '}
-                    Score at least {remediation.mastery_required * 100}% on your
+                    Score at least{' '}
+                    {(remediation.mastery_required * 100).toFixed(0)}% on your
                     next attempt.
                   </p>
                   {viewMarked && (
@@ -492,7 +458,6 @@ const RemediationPage: React.FC = () => {
                         {remediation.content
                           .split('\n')
                           .map((paragraph: string, index: number) => {
-                            // Handle headings
                             if (paragraph.startsWith('# ')) {
                               return (
                                 <h3
@@ -512,7 +477,6 @@ const RemediationPage: React.FC = () => {
                                 </h4>
                               );
                             } else if (paragraph.startsWith('- ')) {
-                              // Handle list items
                               return (
                                 <li
                                   key={index}
@@ -522,10 +486,8 @@ const RemediationPage: React.FC = () => {
                                 </li>
                               );
                             } else if (paragraph.trim() === '') {
-                              // Handle empty lines
                               return <br key={index} />;
                             } else {
-                              // Handle regular paragraphs
                               return (
                                 <p key={index} className="text-gray-700 mb-3">
                                   {renderTextWithLatex(paragraph)}
@@ -593,8 +555,9 @@ const RemediationPage: React.FC = () => {
                   <RefreshCw className="h-5 w-5 mr-2" />
                   Retry Test
                 </Button>
+                {/* Adjusted Backlink */}
                 <Link
-                  href={`/practice/guide/slides/${encodeURIComponent(guideId)}`}
+                  href={`/practice/guide/${encodeURIComponent(title)}`}
                   className="flex items-center justify-center h-11 px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium"
                 >
                   <BookOpen className="h-5 w-5 mr-2" />
@@ -607,8 +570,9 @@ const RemediationPage: React.FC = () => {
               <p className="text-base text-yellow-700">
                 No remediation content available.
               </p>
+              {/* Adjusted Backlink */}
               <Link
-                href={`/practice/guide/slides/${encodeURIComponent(guideId)}`}
+                href={`/practice/guide/${encodeURIComponent(title)}`}
                 className="mt-4 inline-flex items-center justify-center h-10 px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium"
               >
                 <BookOpen className="h-4 w-4 mr-2" />
@@ -622,4 +586,4 @@ const RemediationPage: React.FC = () => {
   );
 };
 
-export default RemediationPage;
+export default BookRemediationPage;

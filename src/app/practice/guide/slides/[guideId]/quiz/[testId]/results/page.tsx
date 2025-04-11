@@ -7,7 +7,7 @@ import { Header } from '@/components/layout/header';
 import Link from 'next/link';
 import { getUserId } from '@/app/auth/getUserId';
 import { Loading } from '@/components/ui/loading';
-import { ENDPOINTS } from '@/config/urls';
+import { ENDPOINTS, API_URL } from '@/config/urls';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -29,6 +29,7 @@ import { ResultCard } from '@/components/practice/ResultCard';
 import { MathJaxContext } from 'better-react-mathjax';
 import { toast } from 'sonner';
 import { createClient } from '@/utils/supabase/client';
+import RemediationChoice from '@/components/practice/RemediationChoice';
 
 // MathJax configuration
 const mathJaxConfig = {
@@ -204,6 +205,7 @@ const SlidesQuizResultsPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [retryLoading, setRetryLoading] = useState<boolean>(false);
   const [masteryThreshold, setMasteryThreshold] = useState<number>(80);
+  const [actualSubmissionId, setActualSubmissionId] = useState<string>('');
 
   useEffect(() => {
     const fetchResults = async (): Promise<void> => {
@@ -228,7 +230,7 @@ const SlidesQuizResultsPage: React.FC = () => {
         if (!subId) {
           // If no submission ID is available, fall back to the old endpoint
           console.log(
-            'No submission ID found, falling back to testResults endpoint'
+            'No submission ID found in URL, falling back to testResults endpoint'
           );
           const response = await fetchWithAuth(
             ENDPOINTS.testResults(authUserId, testId)
@@ -239,6 +241,15 @@ const SlidesQuizResultsPage: React.FC = () => {
           }
 
           const data: QuizResults = await response.json();
+          console.log('Fallback endpoint response:', data);
+
+          // Check if we got a submission ID from the fallback endpoint
+          const fallbackSubmissionId = data.submission_id || '';
+          console.log('Fallback submission ID:', fallbackSubmissionId);
+
+          // Set the actualSubmissionId from the data if available
+          setActualSubmissionId(fallbackSubmissionId);
+
           setResults(data);
 
           // Also fetch mastery thresholds
@@ -263,11 +274,21 @@ const SlidesQuizResultsPage: React.FC = () => {
         const data = await response.json();
         console.log('Received consolidated response:', data);
 
+        // Extract submission ID from the response data
+        const responseSubmissionId =
+          subId || data.submission?.submission_id || '';
+        console.log('Response submission ID:', responseSubmissionId);
+
+        // Store the submission ID
+        setActualSubmissionId(responseSubmissionId);
+
         // Prepare the result data, ensuring questions are available
         const processedResults = {
           ...data.submission,
           // Extract questions from the most recent attempt if they exist
           questions: data.submission.attempts?.[0]?.questions || [],
+          // Ensure submission_id is set
+          submission_id: responseSubmissionId,
         };
 
         // Set state from the consolidated response
@@ -287,7 +308,30 @@ const SlidesQuizResultsPage: React.FC = () => {
   }, [testId, submissionId, searchParams]);
 
   const retryTest = async () => {
-    if (!testId || !submissionId || !results) return;
+    if (!testId || !results || !guideId) return;
+
+    // 1. Reliably get the submission ID from available sources
+    let submissionIdToUse =
+      actualSubmissionId ||
+      results.submission_id ||
+      (results as any).result_id || // Check for result_id (from user feedback)
+      (results as any)._id || // Check for _id as another possibility
+      searchParams.get('submission') ||
+      '';
+
+    // If no ID is found after checking all sources, show error and stop.
+    if (!submissionIdToUse) {
+      console.error('Could not determine submission ID for retry.', {
+        actualSubmissionId,
+        resultsSubmissionId: results.submission_id,
+        resultsResultId: (results as any).result_id,
+        results_id: (results as any)._id,
+        searchParamsSubmission: searchParams.get('submission'),
+      });
+      toast.error('Cannot retry test: Missing submission context.');
+      setError('Missing submission context for retry');
+      return;
+    }
 
     try {
       setRetryLoading(true);
@@ -300,6 +344,8 @@ const SlidesQuizResultsPage: React.FC = () => {
         .getSession()
         .then((res) => res.data.session?.access_token);
 
+      console.log('Retrying test with submission ID:', submissionIdToUse);
+
       const response = await fetch(ENDPOINTS.retryTest, {
         method: 'POST',
         headers: {
@@ -310,7 +356,7 @@ const SlidesQuizResultsPage: React.FC = () => {
           user_id: userId,
           test_id: testId,
           study_guide_id: guideId,
-          previous_attempt_id: submissionId,
+          previous_attempt_id: submissionIdToUse,
         }),
       });
 
@@ -320,12 +366,12 @@ const SlidesQuizResultsPage: React.FC = () => {
         if (data.can_retry) {
           toast.success('Starting new test attempt');
           router.push(
-            `/practice/guide/slides/${guideId}/quiz/${testId}?retry=true&attempt=${data.attempt_number}&previous=${submissionId}`
+            `/practice/guide/slides/${guideId}/quiz/${testId}?retry=true&attempt=${data.attempt_number}&previous=${submissionIdToUse}`
           );
         } else if (data.needs_remediation) {
           toast.warning('Please review the remediation material first');
           router.push(
-            `/practice/guide/slides/${guideId}/quiz/${testId}/remediation?submission=${submissionId}`
+            `/practice/guide/slides/${guideId}/quiz/${testId}/remediation?submission=${submissionIdToUse}`
           );
         } else {
           toast.info(data.message || 'Cannot retry test at this time');
@@ -341,6 +387,16 @@ const SlidesQuizResultsPage: React.FC = () => {
     } finally {
       setRetryLoading(false);
     }
+  };
+
+  const getSubmissionId = () => {
+    return (
+      actualSubmissionId ||
+      results?.submission_id ||
+      '' ||
+      searchParams.get('submission') ||
+      ''
+    );
   };
 
   return (
@@ -557,7 +613,7 @@ const SlidesQuizResultsPage: React.FC = () => {
                           <p className="text-xs text-gray-500 mt-1">
                             {results.attempts_remaining === 0
                               ? 'No attempts remaining'
-                              : `${results.attempts_remaining} attempt${results.attempts_remaining !== 1 ? 's' : ''} remaining before remediation`}
+                              : ``}
                           </p>
                         </div>
                       )}
@@ -603,6 +659,25 @@ const SlidesQuizResultsPage: React.FC = () => {
                   </Card>
                 </div>
 
+                {/* Conditionally render Remediation Button (Added) */}
+                {(results.needs_remediation || results.remediation_viewed) &&
+                  (results.submission_id ||
+                    (results as any).result_id ||
+                    (results as any)._id) && // Check multiple ID fields
+                  guideId && (
+                    <div className="mb-6 text-center">
+                      <Link
+                        href={`/practice/guide/slides/${guideId}/quiz/${testId}/remediation?submission=${(results as any).result_id || results.submission_id || (results as any)._id}&study_guide_id=${guideId}`}
+                        passHref
+                      >
+                        <Button variant="secondary" size="lg">
+                          <BookOpen className="mr-2 h-5 w-5" />
+                          View Remediation Material
+                        </Button>
+                      </Link>
+                    </div>
+                  )}
+
                 {/* Enhanced retry button and remediation guidance section */}
                 <div className="mb-8 flex flex-col gap-4">
                   {results.mastered ? (
@@ -619,32 +694,6 @@ const SlidesQuizResultsPage: React.FC = () => {
                       </div>
                     </div>
                   ) : results.needs_remediation ? (
-                    <div className="bg-amber-50 border border-amber-200 p-4 rounded-lg flex items-center gap-4">
-                      <BookOpen className="h-8 w-8 text-amber-500 flex-shrink-0" />
-                      <div>
-                        <h3 className="font-semibold text-amber-700">
-                          Review Material Required
-                        </h3>
-                        <p className="text-amber-600">
-                          {results.attempt_number === 3
-                            ? "You've reached the maximum number of attempts (3) without achieving mastery."
-                            : `You need to review remediation after ${results.attempt_number} attempts.`}
-                          Please review the remediation material before
-                          retrying.
-                        </p>
-                        <Button
-                          onClick={() =>
-                            router.push(
-                              `/practice/guide/slides/${guideId}/quiz/${testId}/remediation?submission=${submissionId}`
-                            )
-                          }
-                          className="mt-2 bg-amber-500 hover:bg-amber-600 text-white"
-                        >
-                          View Remediation Material
-                        </Button>
-                      </div>
-                    </div>
-                  ) : results.review_recommended ? (
                     <div className="bg-yellow-50 border border-yellow-200 p-6 rounded-lg">
                       <div className="flex items-start gap-4">
                         <AlertTriangle className="h-8 w-8 text-yellow-500 flex-shrink-0" />
@@ -653,34 +702,29 @@ const SlidesQuizResultsPage: React.FC = () => {
                             Review Recommendation
                           </h3>
                           <p className="text-yellow-600 mb-4">
-                            We recommend reviewing this topic&apos;s material
-                            before continuing. After 3 attempts, your highest
-                            score was {results.accuracy.toFixed(0)}% (Mastery
-                            requires {masteryThreshold}%).
+                            After 3 attempts, your highest score was{' '}
+                            {results.accuracy.toFixed(0)}% (Mastery requires{' '}
+                            {masteryThreshold}%). According to Bloom's Mastery
+                            Theory, you must review the remediation materials
+                            and then achieve mastery on a retry to proceed to
+                            the next test.
                           </p>
                           <p className="text-yellow-700 font-medium mb-4">
-                            However, you may now proceed to the next test.
+                            Please review the materials and then retry the test.
+                            You must achieve at least {masteryThreshold}% to
+                            unlock the next test.
                           </p>
                           <div className="flex flex-wrap gap-3">
                             <Button
                               onClick={() =>
                                 router.push(
-                                  `/practice/guide/slides/${guideId}/quiz/${testId}/review?submission=${submissionId}`
+                                  `/practice/guide/slides/${guideId}/quiz/${testId}/remediation?submission=${(results as any).result_id || results.submission_id || (results as any)._id}&study_guide_id=${guideId}`
                                 )
                               }
                               className="bg-yellow-500 hover:bg-yellow-600 text-white"
                             >
                               <BookOpen className="mr-2 h-4 w-4" />
-                              Review Topic Materials
-                            </Button>
-                            <Button
-                              onClick={() =>
-                                router.push(`/practice/guide/slides/${guideId}`)
-                              }
-                              variant="outline"
-                              className="border-yellow-300 text-yellow-700 hover:bg-yellow-50"
-                            >
-                              Continue to Next Test
+                              Review Remediation Materials
                             </Button>
                           </div>
                         </div>

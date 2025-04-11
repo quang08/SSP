@@ -186,8 +186,8 @@ export const ENDPOINTS = {
   // Add new endpoints for Bloom's retry and remediation features
   retryTest: `${API_URL}/api/mastery/retry-test`,
   getRemediation: `${API_URL}/api/mastery/get-remediation`,
-  markRemediationViewed: (remediationId: string) =>
-    `${API_URL}/api/mastery/mark-remediation-viewed/${remediationId}`,
+  markRemediationViewed: (remediationId: string, userId: string) =>
+    `${API_URL}/api/mastery/mark-remediation-viewed/${remediationId}?user_id=${userId}`,
 
   // New endpoints for review materials when remediation isn't generated
   getReviewMaterials: (

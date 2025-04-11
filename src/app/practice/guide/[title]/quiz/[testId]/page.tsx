@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Header } from '@/components/layout/header';
 import QuestionCard from '@/components/practice/card-question';
 import ShortAnswerQuestionCard from '@/components/practice/card-short-answer-question';
@@ -237,6 +237,14 @@ interface ExtendedSubmissionResult extends SubmissionResult {
   short_answer_count: number;
   short_answer_correct: number;
   mastery_updated?: boolean;
+  // Add Bloom's Mastery model fields
+  mastered?: boolean;
+  needs_remediation?: boolean;
+  can_retry?: boolean;
+  attempt_number?: number;
+  attempts_remaining?: number;
+  remediation_id?: string;
+  review_recommended?: boolean;
 }
 
 interface ExtendedStudyGuideResponse extends StudyGuideResponse {
@@ -293,14 +301,24 @@ interface StandardTestSubmissionPayload {
   }>;
   section_title: string;
   chapter_title: string;
+  is_retry: boolean;
+  previous_attempt_id?: string;
+  attempt_number: number;
 }
 
 const QuizPage: React.FC = () => {
   const params = useParams();
+  const searchParams = useSearchParams();
   const testId = typeof params.testId === 'string' ? params.testId : '';
   const title = typeof params.title === 'string' ? params.title : '';
   const router = useRouter();
   const supabase = createClient();
+
+  // Get retry parameters from URL
+  const isRetry = searchParams.get('retry') === 'true';
+  const attemptNumber = parseInt(searchParams.get('attempt') || '1');
+  const previousAttemptId = searchParams.get('previous') || '';
+
   const [notes, setNotes] = useState<{ [key: string]: string }>({});
   const [startTime, setStartTime] = useState<number>(0);
   const [shortAnswers, setShortAnswers] = useState<{ [key: string]: string }>(
@@ -462,16 +480,31 @@ const QuizPage: React.FC = () => {
       const sectionTitle = quiz.section_title || '';
       console.log(`Submitting test for section: ${sectionTitle}`);
 
-      // Find matching chapter/section in the study guide
+      // Normalize the section title we are looking for
+      const normalizedSearchTitle = sectionTitle.trim().toLowerCase();
+
+      // Find matching chapter title
       let chapterTitle = '';
-      for (const chapter of studyGuideData.chapters as Chapter[]) {
-        const matchingSection = chapter.sections.find(
-          (section: Section) => section.title === sectionTitle
-        );
-        if (matchingSection) {
-          chapterTitle = chapter.title;
-          break;
+      if (studyGuideData?.chapters) {
+        for (const chapter of studyGuideData.chapters as Chapter[]) {
+          // Find the section by comparing normalized titles
+          const matchingSection = chapter.sections.find(
+            (section: Section) =>
+              section.title &&
+              section.title.trim().toLowerCase() === normalizedSearchTitle
+          );
+          if (matchingSection) {
+            chapterTitle = chapter.title;
+            break;
+          }
         }
+      }
+
+      // Add a warning if chapterTitle couldn't be found
+      if (!chapterTitle) {
+        console.warn(
+          `Could not find chapter title for section: "${sectionTitle}" in the fetched study guide data. Sending empty chapter title.`
+        );
       }
 
       // Format multiple choice answers (as QuizQuestion)
@@ -605,6 +638,9 @@ const QuizPage: React.FC = () => {
           })),
           section_title: sectionTitle,
           chapter_title: chapterTitle,
+          is_retry: isRetry,
+          previous_attempt_id: isRetry ? previousAttemptId : undefined,
+          attempt_number: isRetry ? attemptNumber : 1,
         };
         console.log('Submitting STANDARD test to:', submitEndpoint);
       }
@@ -657,6 +693,31 @@ const QuizPage: React.FC = () => {
         if (standardResult.mastery_updated !== undefined) {
           console.log(
             `Topic mastery data ${standardResult.mastery_updated ? 'was' : 'was not'} updated`
+          );
+        }
+
+        // Check if server returned special status fields for mastery model
+        if (standardResult.mastered) {
+          toast.success('Congratulations! You have mastered this topic!', {
+            duration: 3000,
+          });
+        } else if (standardResult.needs_remediation) {
+          toast.warning('Review needed before your next attempt.', {
+            duration: 3000,
+          });
+          router.push(
+            `/practice/guide/${encodeURIComponent(title)}/quiz/${testId}/remediation?submission=${standardResult.submission_id}`
+          );
+          return;
+        } else if (standardResult.can_retry) {
+          toast.info(
+            `You can retry this test. Attempt ${standardResult.attempt_number ?? 1}/${
+              (standardResult.attempts_remaining ?? 2) +
+              (standardResult.attempt_number ?? 1)
+            }`,
+            {
+              duration: 3000,
+            }
           );
         }
 

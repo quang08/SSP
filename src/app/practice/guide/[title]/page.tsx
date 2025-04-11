@@ -15,7 +15,16 @@ import { createClient } from '@/utils/supabase/client';
 import { Progress } from '@/components/ui/progress';
 import { Loading } from '@/components/ui/loading';
 import { ENDPOINTS } from '@/config/urls';
-import { ChevronLeft, CheckCircle, PlayCircle, BarChart } from 'lucide-react';
+import {
+  ChevronLeft,
+  CheckCircle,
+  PlayCircle,
+  BarChart,
+  AlertTriangle,
+  Clock,
+  Lock,
+  Circle,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { motion } from 'framer-motion';
 import { CompletedTest, TestResultsResponse } from '@/interfaces/test';
@@ -26,6 +35,7 @@ import 'katex/dist/katex.min.css';
 import ReactMarkdown from 'react-markdown';
 import rehypeKatex from 'rehype-katex';
 import remarkMath from 'remark-math';
+import { toast } from 'sonner';
 
 // Define types for the new JSON structure
 interface QuizChoice {
@@ -55,11 +65,20 @@ interface Section {
   completed?: boolean;
   source_pages?: string[];
   source_texts?: string[];
+  prerequisite_sections?: string[];
+  is_unlocked?: boolean;
+  is_mastered?: boolean;
+  review_recommended?: boolean;
+  attempts_used?: number;
+  mastery_percentage?: number;
 }
 
 interface Chapter {
   title: string;
   sections: Section[];
+  prerequisite_chapters?: string[];
+  is_unlocked?: boolean;
+  is_mastered?: boolean;
 }
 
 interface StudyGuideData {
@@ -83,6 +102,22 @@ interface PracticeTest {
 // Add interface for practice tests data
 interface PracticeTestsData {
   practice_tests: PracticeTest[];
+}
+
+// Add interfaces for mastery status
+interface SectionStatus {
+  section_title: string;
+  is_unlocked: boolean;
+  is_mastered: boolean;
+  review_recommended?: boolean;
+  attempts_used?: number;
+  mastery_percentage?: number;
+}
+
+interface TestStatus {
+  test_id: string;
+  is_unlocked: boolean;
+  prerequisites?: string[];
 }
 
 const container = {
@@ -126,6 +161,22 @@ const StudyGuidePage: React.FC = () => {
   const router = useRouter();
   const supabase = createClient();
   const [generatingTests, setGeneratingTests] = useState<boolean>(false);
+  const [sectionMasteryStatus, setSectionMasteryStatus] = useState<
+    Record<
+      string,
+      {
+        isUnlocked: boolean;
+        isMastered: boolean;
+        review_recommended?: boolean;
+        attempts_used?: number;
+        mastery_percentage?: number;
+      }
+    >
+  >({});
+  const [lockedTests, setLockedTests] = useState<Record<string, boolean>>({});
+  const [testPrerequisites, setTestPrerequisites] = useState<
+    Record<string, string[]>
+  >({});
 
   const { data: userData } = useSWR('user', async () => {
     const { data } = await supabase.auth.getUser();
@@ -145,6 +196,47 @@ const StudyGuidePage: React.FC = () => {
     {
       revalidateOnFocus: false,
       dedupingInterval: 10000, // 10 seconds
+      onSuccess: (data) => {
+        // Process the section mastery statuses
+        const sectionStatus: Record<
+          string,
+          {
+            isUnlocked: boolean;
+            isMastered: boolean;
+            review_recommended?: boolean;
+            attempts_used?: number;
+            mastery_percentage?: number;
+          }
+        > = {};
+
+        // Map section statuses (similar to topic statuses in slides)
+        (data.section_statuses || []).forEach((status: SectionStatus) => {
+          if (status.section_title) {
+            sectionStatus[status.section_title] = {
+              isUnlocked: status.is_unlocked,
+              isMastered: status.is_mastered,
+              review_recommended: status.review_recommended,
+              attempts_used: status.attempts_used,
+              mastery_percentage: status.mastery_percentage,
+            };
+          }
+        });
+        setSectionMasteryStatus(sectionStatus);
+
+        // Process test lock statuses
+        const lockStatus: Record<string, boolean> = {};
+        const prereqStatus: Record<string, string[]> = {};
+
+        (data.test_statuses || []).forEach((status: TestStatus) => {
+          if (status.test_id) {
+            lockStatus[status.test_id] = !status.is_unlocked;
+            prereqStatus[status.test_id] = status.prerequisites || [];
+          }
+        });
+
+        setLockedTests(lockStatus);
+        setTestPrerequisites(prereqStatus);
+      },
     }
   );
 
@@ -180,41 +272,109 @@ const StudyGuidePage: React.FC = () => {
     {} as TestMap
   ) || {}) as TestMap;
 
+  // Correctly create the Set of completed test IDs
   const completedTests = new Set(
-    completedTestsData.test_results
-      ?.filter(
-        (test: CompletedTest) =>
-          test.study_guide_id === studyGuide?.study_guide_id
-      )
-      .map((test: CompletedTest) => test.test_id) || []
+    consolidatedData?.completed_tests?.map(
+      (test: CompletedTest) => test.test_id
+    ) || []
   );
 
-  // Process the study guide to add completion status to sections
+  // Process the study guide to add completion status, mastery status, and lock status to sections
   const processedGuide = studyGuide
     ? {
         ...studyGuide,
         chapters: studyGuide.chapters.map((chapter: Chapter) => ({
           ...chapter,
-          sections: chapter.sections.map((section: Section) => ({
-            ...section,
-            completed: completedTests.has(practiceTests[section.title] || ''),
-          })),
+          sections: chapter.sections.map((section: Section) => {
+            const testId = practiceTests[section.title] || '';
+            const sectionMastery = sectionMasteryStatus[section.title];
+
+            // Check if prerequisites are met
+            let prerequisitesMet = true;
+            if (
+              section.prerequisite_sections &&
+              section.prerequisite_sections.length > 0
+            ) {
+              prerequisitesMet = section.prerequisite_sections.every(
+                (prereq) => {
+                  const prereqStatus = sectionMasteryStatus[prereq];
+                  // Consider a prerequisite met if:
+                  // 1. It's marked as mastered OR
+                  // 2. It's marked as review_recommended (which means user has attempted all tries)
+                  return (
+                    prereqStatus &&
+                    (prereqStatus.isMastered || prereqStatus.review_recommended)
+                  );
+                }
+              );
+            }
+
+            // Determine if section is unlocked based on prerequisites
+            const is_unlocked = sectionMastery?.isUnlocked ?? prerequisitesMet;
+
+            return {
+              ...section,
+              completed: completedTests.has(testId),
+              is_unlocked: is_unlocked,
+              is_mastered: sectionMastery?.isMastered ?? false,
+              review_recommended: sectionMastery?.review_recommended ?? false,
+              attempts_used: sectionMastery?.attempts_used ?? 0,
+              mastery_percentage: sectionMastery?.mastery_percentage ?? 0,
+            };
+          }),
         })),
       }
     : null;
 
-  const handleQuizClick = (testId: string): void => {
+  const handleQuizClick = (testId: string, sectionTitle: string): void => {
     if (!title) return;
 
+    // If test is already completed, show the results
     if (completedTests.has(testId)) {
       router.push(
         `/practice/guide/${encodeURIComponent(title)}/quiz/${testId}/results`
       );
-    } else {
-      router.push(
-        `/practice/guide/${encodeURIComponent(title)}/quiz/${testId}`
-      );
+      return;
     }
+
+    // Get the section from the processed guide
+    const section = findSectionByTitle(processedGuide, sectionTitle);
+
+    // Check if the section has prerequisites and if they are met
+    if (section && !section.is_unlocked) {
+      // Get prerequisite names to show in the toast
+      const prerequisites = section.prerequisite_sections || [];
+      const prerequisitesList =
+        prerequisites.length > 0 ? `: ${prerequisites.join(', ')}` : '';
+
+      // Show toast notification about prerequisites
+      toast.error('Prerequisites Required', {
+        description: `You need to master or complete the prerequisite sections before taking this test${prerequisitesList}.`,
+        duration: 4000,
+      });
+      return;
+    }
+
+    // Navigate to the test if unlocked
+    router.push(`/practice/guide/${encodeURIComponent(title)}/quiz/${testId}`);
+  };
+
+  // Helper function to find a section by title in the processed guide
+  const findSectionByTitle = (
+    guide: any,
+    sectionTitle: string
+  ): Section | null => {
+    if (!guide) return null;
+
+    for (const chapter of guide.chapters) {
+      for (const section of chapter.sections) {
+        if (section.title === sectionTitle) {
+          return section;
+        }
+      }
+    }
+
+    return null;
   };
 
   // Generate practice tests from the studyGuide data
@@ -246,6 +406,43 @@ const StudyGuidePage: React.FC = () => {
     } finally {
       setGeneratingTests(false);
     }
+  };
+
+  // Function to determine section status icon and styling
+  const getSectionStatusInfo = (section: Section) => {
+    let statusIcon = null;
+    let statusText = '';
+    let bgColorClass = '';
+    let textColorClass = '';
+
+    if (section.is_mastered) {
+      statusIcon = <CheckCircle className="h-4 w-4 text-green-500" />;
+      statusText = 'Mastered';
+      bgColorClass = 'bg-green-100';
+      textColorClass = 'text-green-700';
+    } else if (section.review_recommended) {
+      statusIcon = <AlertTriangle className="h-4 w-4 text-yellow-500" />;
+      statusText = 'Review Recommended';
+      bgColorClass = 'bg-yellow-100';
+      textColorClass = 'text-yellow-700';
+    } else if (section.attempts_used && section.attempts_used > 0) {
+      statusIcon = <Clock className="h-4 w-4 text-blue-500" />;
+      statusText = 'In Progress';
+      bgColorClass = 'bg-blue-100';
+      textColorClass = 'text-blue-700';
+    } else if (!section.is_unlocked) {
+      statusIcon = <Lock className="h-4 w-4 text-gray-500" />;
+      statusText = 'Locked';
+      bgColorClass = 'bg-gray-100';
+      textColorClass = 'text-gray-700';
+    } else {
+      statusIcon = <Circle className="h-4 w-4 text-gray-400" />;
+      statusText = 'Not Started';
+      bgColorClass = 'bg-gray-100';
+      textColorClass = 'text-gray-700';
+    }
+
+    return { statusIcon, statusText, bgColorClass, textColorClass };
   };
 
   // Update MathJax config with additional macros
@@ -669,140 +866,293 @@ const StudyGuidePage: React.FC = () => {
                           <AccordionContent className="px-6 pb-6 pt-2">
                             <div className="space-y-3">
                               {chapter.sections.map(
-                                (section: Section, sectionIndex: number) => (
-                                  <motion.div
-                                    key={sectionIndex}
-                                    variants={item}
-                                  >
-                                    <AccordionItem
-                                      value={`section-${chapterIndex}-${sectionIndex}`}
-                                      className="border-2 border-gray-300 rounded-lg overflow-hidden hover:border-[var(--color-primary)]/50 transition-all duration-300 data-[state=open]:shadow-md data-[state=open]:border-[var(--color-primary)]/40"
+                                (section: Section, sectionIndex: number) => {
+                                  // Get section status information
+                                  const {
+                                    statusIcon,
+                                    statusText,
+                                    bgColorClass,
+                                    textColorClass,
+                                  } = getSectionStatusInfo(section);
+
+                                  return (
+                                    <motion.div
+                                      key={sectionIndex}
+                                      variants={item}
                                     >
-                                      <AccordionTrigger className="px-4 py-3 hover:no-underline transition-colors">
-                                        <div className="flex items-center gap-3">
-                                          <div
-                                            className={cn(
-                                              'p-1.5 rounded-lg transition-colors',
-                                              section.completed
-                                                ? 'bg-green-200'
-                                                : 'bg-[var(--color-primary)]/10'
-                                            )}
-                                          >
-                                            {section.completed ? (
-                                              <CheckCircle className="h-4 w-4 text-green-600" />
-                                            ) : (
-                                              <PlayCircle className="h-4 w-4 text-[var(--color-primary)]" />
+                                      <AccordionItem
+                                        value={`section-${chapterIndex}-${sectionIndex}`}
+                                        className="border-2 border-gray-300 rounded-lg overflow-hidden hover:border-[var(--color-primary)]/50 transition-all duration-300 data-[state=open]:shadow-md data-[state=open]:border-[var(--color-primary)]/40"
+                                      >
+                                        <AccordionTrigger className="px-4 py-3 hover:no-underline transition-colors">
+                                          <div className="flex items-center gap-3">
+                                            <div
+                                              className={cn(
+                                                'p-1.5 rounded-lg transition-colors',
+                                                section.is_mastered
+                                                  ? 'bg-green-200'
+                                                  : section.is_unlocked
+                                                    ? 'bg-[var(--color-primary)]/10'
+                                                    : 'bg-gray-200'
+                                              )}
+                                            >
+                                              {section.is_mastered ? (
+                                                <CheckCircle className="h-4 w-4 text-green-600" />
+                                              ) : !section.is_unlocked ? (
+                                                <Lock className="h-4 w-4 text-gray-500" />
+                                              ) : (
+                                                <PlayCircle className="h-4 w-4 text-[var(--color-primary)]" />
+                                              )}
+                                            </div>
+                                            <span className="text-left font-medium text-gray-800">
+                                              {section.title}
+                                            </span>
+                                            {/* Add status indicator */}
+                                            {statusIcon && (
+                                              <span
+                                                className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full ${bgColorClass} ${textColorClass}`}
+                                              >
+                                                {statusIcon}
+                                                {statusText}
+                                                {section.mastery_percentage !==
+                                                  undefined && (
+                                                  <span className="ml-1">
+                                                    (
+                                                    {Math.round(
+                                                      section.mastery_percentage
+                                                    )}
+                                                    %)
+                                                  </span>
+                                                )}
+                                              </span>
                                             )}
                                           </div>
-                                          <span className="text-left font-medium text-gray-800">
-                                            {section.title}
-                                          </span>
-                                        </div>
-                                      </AccordionTrigger>
+                                        </AccordionTrigger>
 
-                                      <AccordionContent className="px-4 pb-4 pt-1">
-                                        <div className="space-y-2.5">
-                                          {/* Key Concepts */}
-                                          {section.key_concepts && (
-                                            <div className="space-y-2">
-                                              <h4 className="font-medium text-gray-900">
-                                                Key Concepts
-                                              </h4>
-                                              <ul className="list-disc list-inside space-y-2 text-gray-700">
-                                                {section.key_concepts.map(
-                                                  (concept, index) => (
-                                                    <li key={index}>
-                                                      {renderTextWithLatex(
-                                                        concept
-                                                      )}
-                                                    </li>
-                                                  )
-                                                )}
-                                              </ul>
-                                            </div>
-                                          )}
-
-                                          {/* Source Information */}
-                                          {section.source_pages &&
-                                            section.source_pages.length > 0 && (
-                                              <div className="text-sm text-gray-500">
-                                                Source Page
-                                                {section.source_pages.length > 1
-                                                  ? 's'
-                                                  : ''}
-                                                :{' '}
-                                                {section.source_pages.join(
-                                                  ', '
-                                                )}
-                                              </div>
-                                            )}
-
-                                          {/* Source Texts */}
-                                          {section.source_texts &&
-                                            section.source_texts.length > 0 && (
+                                        <AccordionContent className="px-4 pb-4 pt-1">
+                                          <div className="space-y-2.5">
+                                            {/* Key Concepts */}
+                                            {section.key_concepts && (
                                               <div className="space-y-2">
-                                                {section.source_texts.map(
-                                                  (text, index) => (
-                                                    <div
-                                                      key={index}
-                                                      className="p-3 bg-gray-50 rounded-lg border border-gray-200"
-                                                    >
-                                                      <p className="text-sm text-gray-600 italic leading-relaxed">
-                                                        &ldquo;
+                                                <h4 className="font-medium text-gray-900">
+                                                  Key Concepts
+                                                </h4>
+                                                <ul className="list-disc list-inside space-y-2 text-gray-700">
+                                                  {section.key_concepts.map(
+                                                    (concept, index) => (
+                                                      <li key={index}>
                                                         {renderTextWithLatex(
-                                                          text
+                                                          concept
                                                         )}
-                                                        &rdquo;
-                                                      </p>
-                                                    </div>
-                                                  )
-                                                )}
+                                                      </li>
+                                                    )
+                                                  )}
+                                                </ul>
                                               </div>
                                             )}
 
-                                          {/* Quiz Button or Generate Tests Button */}
-                                          {practiceTests[section.title] ? (
-                                            <div className="pt-4">
-                                              <Button
-                                                onClick={() =>
-                                                  handleQuizClick(
-                                                    practiceTests[section.title]
-                                                  )
-                                                }
-                                                className="w-full bg-gradient-to-r from-[var(--color-primary)] to-purple-400 text-white hover:from-[var(--color-primary)]/90 hover:to-purple-500/90 transition-all duration-300"
-                                              >
-                                                {completedTests.has(
-                                                  practiceTests[section.title]
-                                                )
-                                                  ? 'View Results'
-                                                  : 'Start Quiz'}
-                                              </Button>
-                                            </div>
-                                          ) : (
-                                            <div className="pt-4">
-                                              <Button
-                                                onClick={generatePracticeTests}
-                                                disabled={generatingTests}
-                                                className="w-full bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-dark)]"
-                                              >
-                                                {generatingTests ? (
-                                                  <div className="flex items-center gap-2">
-                                                    <span className="animate-spin h-4 w-4 border-2 border-white border-opacity-50 border-t-white rounded-full"></span>
-                                                    <span>
-                                                      Generating Tests...
-                                                    </span>
-                                                  </div>
-                                                ) : (
-                                                  'Generate Practice Tests'
-                                                )}
-                                              </Button>
-                                            </div>
-                                          )}
-                                        </div>
-                                      </AccordionContent>
-                                    </AccordionItem>
-                                  </motion.div>
-                                )
+                                            {/* Source Information */}
+                                            {section.source_pages &&
+                                              section.source_pages.length >
+                                                0 && (
+                                                <div className="text-sm text-gray-500">
+                                                  Source Page
+                                                  {section.source_pages.length >
+                                                  1
+                                                    ? 's'
+                                                    : ''}
+                                                  :{' '}
+                                                  {section.source_pages.join(
+                                                    ', '
+                                                  )}
+                                                </div>
+                                              )}
+
+                                            {/* Source Texts */}
+                                            {section.source_texts &&
+                                              section.source_texts.length >
+                                                0 && (
+                                                <div className="space-y-2">
+                                                  {section.source_texts.map(
+                                                    (text, index) => (
+                                                      <div
+                                                        key={index}
+                                                        className="p-3 bg-gray-50 rounded-lg border border-gray-200"
+                                                      >
+                                                        <p className="text-sm text-gray-600 italic leading-relaxed">
+                                                          &ldquo;
+                                                          {renderTextWithLatex(
+                                                            text
+                                                          )}
+                                                          &rdquo;
+                                                        </p>
+                                                      </div>
+                                                    )
+                                                  )}
+                                                </div>
+                                              )}
+
+                                            {/* Display prerequisites if any */}
+                                            {section.prerequisite_sections &&
+                                              section.prerequisite_sections
+                                                .length > 0 && (
+                                                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm">
+                                                  <p className="font-medium text-gray-700 mb-2">
+                                                    Prerequisites:
+                                                  </p>
+                                                  <ul className="list-disc list-inside space-y-1 text-gray-600">
+                                                    {section.prerequisite_sections.map(
+                                                      (prereq, index) => (
+                                                        <li
+                                                          key={index}
+                                                          className="flex items-center gap-2"
+                                                        >
+                                                          <span>{prereq}</span>
+                                                          {sectionMasteryStatus[
+                                                            prereq
+                                                          ] && (
+                                                            <span className="flex items-center gap-1">
+                                                              {sectionMasteryStatus[
+                                                                prereq
+                                                              ].isMastered ? (
+                                                                <CheckCircle className="h-3 w-3 text-green-500" />
+                                                              ) : sectionMasteryStatus[
+                                                                  prereq
+                                                                ]
+                                                                  .review_recommended ? (
+                                                                <AlertTriangle className="h-3 w-3 text-yellow-500" />
+                                                              ) : !sectionMasteryStatus[
+                                                                  prereq
+                                                                ].isUnlocked ? (
+                                                                <Lock className="h-3 w-3 text-gray-500" />
+                                                              ) : (
+                                                                <Circle className="h-3 w-3 text-gray-400" />
+                                                              )}
+                                                              <span
+                                                                className={`text-xs px-1.5 py-0.5 rounded-full ${
+                                                                  sectionMasteryStatus[
+                                                                    prereq
+                                                                  ].isMastered
+                                                                    ? 'bg-green-100 text-green-700'
+                                                                    : sectionMasteryStatus[
+                                                                          prereq
+                                                                        ]
+                                                                          .review_recommended
+                                                                      ? 'bg-yellow-100 text-yellow-700'
+                                                                      : 'bg-gray-100 text-gray-700'
+                                                                }`}
+                                                              >
+                                                                {sectionMasteryStatus[
+                                                                  prereq
+                                                                ].isMastered
+                                                                  ? 'Mastered'
+                                                                  : sectionMasteryStatus[
+                                                                        prereq
+                                                                      ]
+                                                                        .review_recommended
+                                                                    ? 'Review Recommended'
+                                                                    : sectionMasteryStatus[
+                                                                          prereq
+                                                                        ]
+                                                                          .attempts_used &&
+                                                                        sectionMasteryStatus[
+                                                                          prereq
+                                                                        ]
+                                                                          .attempts_used >
+                                                                          0
+                                                                      ? 'Attempted'
+                                                                      : 'Not Mastered'}
+                                                              </span>
+                                                            </span>
+                                                          )}
+                                                        </li>
+                                                      )
+                                                    )}
+                                                  </ul>
+                                                </div>
+                                              )}
+
+                                            {/* Quiz Button or Generate Tests Button */}
+                                            {practiceTests[section.title] ? (
+                                              <div className="pt-4">
+                                                <Button
+                                                  onClick={() =>
+                                                    handleQuizClick(
+                                                      practiceTests[
+                                                        section.title
+                                                      ],
+                                                      section.title
+                                                    )
+                                                  }
+                                                  className={cn(
+                                                    'w-full transition-all duration-300',
+                                                    section.is_unlocked
+                                                      ? 'bg-gradient-to-r from-[var(--color-primary)] to-purple-400 text-white hover:from-[var(--color-primary)]/90 hover:to-purple-500/90'
+                                                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                                  )}
+                                                  disabled={
+                                                    !section.is_unlocked
+                                                  }
+                                                  title={
+                                                    !section.is_unlocked
+                                                      ? section.prerequisite_sections &&
+                                                        section
+                                                          .prerequisite_sections
+                                                          .length > 0
+                                                        ? `Prerequisites: ${section.prerequisite_sections.join(', ')}`
+                                                        : 'You need to master the prerequisites first'
+                                                      : ''
+                                                  }
+                                                >
+                                                  {!section.is_unlocked ? (
+                                                    <>
+                                                      <Lock className="h-4 w-4 mr-2" />
+                                                      Locked (Prerequisites
+                                                      Required)
+                                                    </>
+                                                  ) : completedTests.has(
+                                                      practiceTests[
+                                                        section.title
+                                                      ]
+                                                    ) ? (
+                                                    'View Results'
+                                                  ) : section.is_mastered ? (
+                                                    'Mastered'
+                                                  ) : section.review_recommended ? (
+                                                    'Review Recommended'
+                                                  ) : (
+                                                    'Start Quiz'
+                                                  )}
+                                                </Button>
+                                              </div>
+                                            ) : (
+                                              <div className="pt-4">
+                                                <Button
+                                                  onClick={
+                                                    generatePracticeTests
+                                                  }
+                                                  disabled={generatingTests}
+                                                  className="w-full bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-dark)]"
+                                                >
+                                                  {generatingTests ? (
+                                                    <div className="flex items-center gap-2">
+                                                      <span className="animate-spin h-4 w-4 border-2 border-white border-opacity-50 border-t-white rounded-full"></span>
+                                                      <span>
+                                                        Generating Tests...
+                                                      </span>
+                                                    </div>
+                                                  ) : (
+                                                    'Generate Practice Tests'
+                                                  )}
+                                                </Button>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </AccordionContent>
+                                      </AccordionItem>
+                                    </motion.div>
+                                  );
+                                }
                               )}
                             </div>
                           </AccordionContent>

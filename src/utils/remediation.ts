@@ -27,7 +27,7 @@ export const markRemediationViewed = async (
     }
 
     const response = await fetch(
-      ENDPOINTS.markRemediationViewed(remediation_id),
+      ENDPOINTS.markRemediationViewed(remediation_id, userId),
       {
         method: 'POST',
         headers: {
@@ -48,11 +48,124 @@ export const markRemediationViewed = async (
       );
     }
 
+    // Display a message informing users about the next steps
+    toast.success('Remediation marked as viewed', {
+      description:
+        'Remember: You must retry the test and achieve at least 80% accuracy to proceed to the next test.',
+      duration: 5000,
+    });
+
     return true;
   } catch (error) {
     console.error('Error marking remediation as viewed:', error);
     toast.error('Failed to mark remediation as viewed. Please try again.');
     return false;
+  }
+};
+
+/**
+ * Mark review materials as viewed
+ * @param userId The user ID
+ * @param studyGuideId The study guide ID
+ * @param topicId The topic ID
+ * @param submissionId The submission ID
+ */
+export const markReviewViewed = async (
+  userId: string,
+  studyGuideId: string,
+  topicId: string,
+  submissionId: string
+): Promise<boolean> => {
+  try {
+    const supabase = createClient();
+
+    const token = await supabase.auth
+      .getSession()
+      .then((res) => res.data.session?.access_token);
+
+    if (!token) {
+      throw new Error('Authentication token is missing');
+    }
+
+    const response = await fetch(
+      ENDPOINTS.markReviewViewed(userId, studyGuideId, topicId, submissionId),
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(
+        errorData.message || 'Failed to mark review materials as viewed'
+      );
+    }
+
+    // Display a message informing users about the next steps
+    toast.success('Review materials marked as viewed', {
+      description:
+        "According to Bloom's Mastery Theory, you must now retry the test and achieve at least 80% accuracy to proceed to the next test.",
+      duration: 5000,
+    });
+
+    return true;
+  } catch (error) {
+    console.error('Error marking review materials as viewed:', error);
+    toast.error('Failed to mark review as viewed. Please try again.');
+    return false;
+  }
+};
+
+/**
+ * Get review materials for a test
+ * @param userId The user ID
+ * @param studyGuideId The study guide ID
+ * @param topicId The topic ID
+ * @param submissionId The submission ID
+ */
+export const getReviewMaterials = async (
+  userId: string,
+  studyGuideId: string,
+  topicId: string,
+  submissionId: string
+): Promise<any> => {
+  try {
+    const supabase = createClient();
+
+    const token = await supabase.auth
+      .getSession()
+      .then((res) => res.data.session?.access_token);
+
+    if (!token) {
+      throw new Error('Authentication token is missing');
+    }
+
+    const response = await fetch(
+      ENDPOINTS.getReviewMaterials(userId, studyGuideId, topicId, submissionId),
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message || 'Failed to get review materials');
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error getting review materials:', error);
+    toast.error('Failed to load review materials. Please try again.');
+    throw error;
   }
 };
 
@@ -83,7 +196,7 @@ export const rateRemediation = async (
     }
 
     const response = await fetch(
-      ENDPOINTS.markRemediationViewed(remediation_id),
+      ENDPOINTS.markRemediationViewed(remediation_id, userId),
       {
         method: 'POST',
         headers: {

@@ -56,11 +56,22 @@ import * as Messages from '@/config/messages';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { TopicMasteryCard } from '../../components/dashboard/topic-mastery-card';
-import { initSessionActivity } from '@/utils/session-management';
 import { MathJax, MathJaxContext } from 'better-react-mathjax';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import { useUser } from '@/utils/supabase/get-user';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  TooltipProps,
+} from 'recharts';
+import { format } from 'date-fns';
 
 // MathJax configuration
 const mathJaxConfig = {
@@ -182,55 +193,207 @@ const fetcher = async (url: string) => {
   return data;
 };
 
+const CustomTooltip = ({
+  active,
+  payload,
+  label,
+}: TooltipProps<number, string>) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-white p-3 border border-gray-200 shadow-md rounded-md">
+        <p className="font-medium text-sm text-gray-700">{label}</p>
+        <div className="mt-2 space-y-1">
+          {payload.map((entry, index) => (
+            <div key={index} className="flex items-center gap-2">
+              <div
+                className="w-3 h-3 rounded-full"
+                style={{ backgroundColor: entry.color }}
+              />
+              <p className="text-sm">
+                <span className="font-medium">{entry.name}: </span>
+                <span>
+                  {entry.name === 'Accuracy' ? `${entry.value}%` : entry.value}
+                </span>
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
+
+// --- Start GuideAnalyticCard Inner Component ---
+const GuideAnalyticCard = ({
+  guideAnalytic,
+  userId,
+}: {
+  guideAnalytic: GuideAnalytics;
+  userId: string | undefined;
+}) => {
+  const { data: performanceHistory, error: performanceError } = useSWR(
+    guideAnalytic?.study_guide_id && userId
+      ? ENDPOINTS.guidePerformance(guideAnalytic.study_guide_id, userId)
+      : null,
+    fetcher
+  );
+
+  const chartData = performanceHistory?.test_results
+    ? [...performanceHistory.test_results]
+        .sort(
+          (a, b) =>
+            new Date(a.submitted_at).getTime() -
+            new Date(b.submitted_at).getTime()
+        )
+        .map((result) => ({
+          date: format(new Date(result.submitted_at), 'MMM d'),
+          Score: result.score,
+          Accuracy: parseFloat(result.accuracy.toFixed(1)),
+          timestamp: result.submitted_at,
+        }))
+    : [];
+
+  return (
+    <motion.div
+      key={guideAnalytic.study_guide_id}
+      variants={fadeInUp}
+      className="h-full"
+    >
+      <Card className="bg-white shadow-md hover:shadow-lg transition-shadow duration-300 rounded-lg overflow-hidden flex flex-col h-full">
+        <CardHeader className="bg-gray-50 border-b border-gray-200 py-3 px-4">
+          <CardTitle className="text-md font-semibold text-gray-800 truncate">
+            {guideAnalytic.study_guide_title || 'Untitled Guide'}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-4 space-y-3 text-sm flex-grow">
+          {' '}
+          {/* Added flex-grow */}
+          {/* Overall Stats */}
+          <div className="flex justify-between items-center">
+            <span className="text-gray-600">Avg. Accuracy:</span>
+            <span className="font-medium text-[var(--color-primary)]">
+              {guideAnalytic.average_accuracy?.toFixed(0) ?? 'N/A'}%
+            </span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-gray-600">Avg. Score:</span>
+            <span className="font-medium">
+              {guideAnalytic.average_score?.toFixed(1) ?? 'N/A'}
+            </span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-gray-600">Total Submissions:</span>
+            <span className="font-medium">
+              {guideAnalytic.total_tests ?? 'N/A'}
+            </span>
+          </div>
+          {/* Attempt Progression */}
+          {(guideAnalytic.latest_test as any)?.attempts &&
+            (guideAnalytic.latest_test as any).attempts.length > 0 && (
+              <div className="pt-3 border-t border-gray-100">
+                <h4 className="text-sm font-medium text-gray-700 mb-2">
+                  Latest Test Attempts:
+                </h4>
+                <div className="space-y-1">
+                  {(guideAnalytic.latest_test as any).attempts
+                    .slice(-5)
+                    .map((attempt: any) => (
+                      <div
+                        key={attempt.attempt_id || attempt.attempt_number}
+                        className="flex justify-between items-center text-xs bg-gray-50 px-2 py-1 rounded"
+                      >
+                        <span className="text-gray-600">
+                          Attempt {attempt.attempt_number}:
+                        </span>
+                        <span
+                          className={`font-medium ${attempt.accuracy >= 80 ? 'text-green-600' : 'text-amber-600'}`}
+                        >
+                          {attempt.accuracy?.toFixed(0) ?? 'N/A'}%
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+          {/* Performance Chart */}
+          <div className="pt-3 border-t border-gray-100 mt-3">
+            <h4 className="text-sm font-medium text-gray-700 mb-2">
+              Performance Trend:
+            </h4>
+            {performanceError ? (
+              <p className="text-xs text-red-600">Error loading chart.</p>
+            ) : !performanceHistory ? (
+              <div className="flex items-center justify-center h-32">
+                <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
+              </div>
+            ) : chartData.length > 0 ? (
+              <div className="h-40">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart
+                    data={chartData}
+                    margin={{ top: 5, right: 10, left: -25, bottom: 0 }}
+                  >
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fontSize: 10 }}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      yAxisId="right"
+                      orientation="right"
+                      domain={[0, 100]}
+                      tick={{ fontSize: 10 }}
+                      width={30}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <Tooltip
+                      content={<CustomTooltip />}
+                      wrapperStyle={{ zIndex: 10 }}
+                    />
+                    <Line
+                      yAxisId="right"
+                      type="monotone"
+                      dataKey="Accuracy"
+                      stroke="#3b82f6"
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 4 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500 text-center h-32 flex items-center justify-center">
+                No performance history for chart.
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+};
+// --- End GuideAnalyticCard Inner Component ---
+
 export default function DashboardPage() {
   const supabase = createClient();
-  const [selectedGuideIndex, setSelectedGuideIndex] = useState(0);
   const [studyTimeView, setStudyTimeView] = useState<'day' | 'week' | 'month'>(
     'week'
   );
   const [isClaimingAnonymousSessions, setIsClaimingAnonymousSessions] =
     useState(false);
-  const [isUserActive, setIsUserActive] = useState(true);
-  const [lastActivity, setLastActivity] = useState(Date.now());
-  const INACTIVITY_THRESHOLD = 5 * 60 * 1000; // 5 minutes
-
-  // Replace the direct SWR call with our useUser hook
   const {
     user: userData,
     isLoading: userLoading,
     error: userError,
   } = useUser();
 
-  const userId = userData?.id; // Declare userId AFTER fetching userData
+  const userId = userData?.id;
 
-  // Track user activity
-  useEffect(() => {
-    const updateActivity = () => {
-      setIsUserActive(true);
-      setLastActivity(Date.now());
-    };
-
-    // Events that indicate user activity
-    window.addEventListener('mousemove', updateActivity);
-    window.addEventListener('keydown', updateActivity);
-    window.addEventListener('click', updateActivity);
-
-    // Check if user is inactive
-    const checkInactivity = setInterval(() => {
-      if (Date.now() - lastActivity > INACTIVITY_THRESHOLD) {
-        setIsUserActive(false);
-      }
-    }, 60000);
-
-    return () => {
-      window.removeEventListener('mousemove', updateActivity);
-      window.removeEventListener('keydown', updateActivity);
-      window.removeEventListener('click', updateActivity);
-      clearInterval(checkInactivity);
-    };
-  }, [lastActivity]);
-
-  // Use the consolidated dashboard data endpoint with activity-based polling
+  // Use the consolidated dashboard data endpoint
   const {
     data: dashboardData,
     error: dashboardError,
@@ -238,52 +401,29 @@ export default function DashboardPage() {
   } = useSWR(
     userId
       ? ENDPOINTS.dashboardData(userId, {
-          includeOngoing: false,
-          aggregateBy: studyTimeView,
-          includeAnonymous: false,
+          // No session params needed here
         })
       : null,
     fetcher,
     {
-      refreshInterval: isUserActive ? 60000 : 0, // Only poll when user is active
-      revalidateOnFocus: isUserActive, // Only revalidate on focus if user is active
-      dedupingInterval: 10000, // Avoid duplicated requests within 10 seconds
+      // Keep basic SWR config, removed activity-based refresh
+      refreshInterval: 60000,
+      revalidateOnFocus: true,
+      dedupingInterval: 10000,
       onError: (err) => {
         console.error('Error fetching dashboard data:', err);
       },
     }
   );
 
-  // Handle page visibility changes - MOVED AFTER SWR DECLARATION
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        // Stop polling when tab is not visible by manually revalidating with no auto-refresh
-        if (userId) {
-          mutateDashboardData(); // Just trigger a final update
-        }
-      } else {
-        // Resume polling when tab becomes visible if user is active
-        if (isUserActive && userId) {
-          mutateDashboardData(); // Trigger an immediate update
-        }
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [userId, isUserActive, mutateDashboardData]);
-
   // Extract data from the consolidated response
   const rawMasteryData = dashboardData?.topic_mastery;
-  const enhancedStudyHours = dashboardData?.study_hours;
+  const enhancedStudyHours = dashboardData?.study_hours; // Now contains testing time
   const testAnalytics = dashboardData?.test_analytics;
-  const allGuideAnalytics = dashboardData
+  const allGuideAnalytics = dashboardData?.guide_analytics
     ? { study_guides: dashboardData.guide_analytics }
     : null;
-  const studyGuidesResponse = dashboardData
+  const studyGuidesResponse = dashboardData?.study_guides
     ? { study_guides: dashboardData.study_guides }
     : null;
 
@@ -381,257 +521,18 @@ export default function DashboardPage() {
     return grouped;
   }, [rawMasteryData, userId]);
 
-  // Add a function to check if user is new (no study hours)
+  // Check if user is new based on *testing* time
   const isNewUser = useMemo(() => {
     if (!enhancedStudyHours) return true;
     return enhancedStudyHours.total_hours === 0;
   }, [enhancedStudyHours]);
 
-  const selectedGuide = studyGuides?.[selectedGuideIndex];
-
-  // Find the selected guide's analytics from the all guide analytics data
-  const selectedGuideAnalytics = useMemo(() => {
-    if (
-      !allGuideAnalytics?.study_guides ||
-      !selectedGuide ||
-      allGuideAnalytics.study_guides.length === 0
-    )
-      return null;
-
-    return allGuideAnalytics.study_guides.find(
-      (guide: GuideAnalytics) => guide.study_guide_id === selectedGuide.id
-    );
-  }, [allGuideAnalytics, selectedGuide]);
-
-  // Individual guide fetch - keep as fallback if the all analytics endpoint fails
-  const { data: individualGuideAnalytics, error: guideAnalyticsError } = useSWR(
-    userId && selectedGuide?.id && !selectedGuideAnalytics
-      ? ENDPOINTS.guideAnalytics(userId, selectedGuide.id)
-      : null,
-    fetcher
-  );
-
-  // Use either the analytics from all guides or individual fetch
-  const guideAnalytics = selectedGuideAnalytics || individualGuideAnalytics;
-
-  const isLoading = !userData || !enhancedStudyHours || !testAnalytics;
-  const hasError = false; // We're handling errors gracefully now
   const userName =
     userData?.user_metadata?.full_name ||
     userData?.user_metadata?.name ||
     userData?.user_metadata?.display_name ||
     userData?.email?.split('@')[0] ||
     'Student';
-
-  const handlePreviousGuide = () => {
-    setSelectedGuideIndex((prev) =>
-      prev === 0 ? (studyGuides?.length || 1) - 1 : prev - 1
-    );
-  };
-
-  const handleNextGuide = () => {
-    setSelectedGuideIndex((prev) =>
-      prev === (studyGuides?.length || 1) - 1 ? 0 : prev + 1
-    );
-  };
-
-  // Add function to select a guide by ID
-  const selectGuideById = useCallback(
-    (guideId: string) => {
-      console.log(`Trying to select guide with ID: ${guideId}`);
-
-      const guideIndex = studyGuides.findIndex(
-        (guide: DashboardGuide) => guide.id === guideId
-      );
-
-      console.log(
-        `Found guide at index: ${guideIndex}, total guides: ${studyGuides.length}`
-      );
-
-      if (guideIndex >= 0) {
-        const guide = studyGuides[guideIndex];
-        console.log(
-          `Selecting guide: ${guide.title}, type: ${guide.type || 'regular'}`
-        );
-        setSelectedGuideIndex(guideIndex);
-        return true;
-      }
-
-      console.log(`Guide not found in studyGuides list`);
-      // For debugging, log all available guide IDs
-      if (studyGuides.length > 0) {
-        console.log('Available guide IDs:');
-        studyGuides.forEach((g: DashboardGuide) =>
-          console.log(`- ${g.id} (${g.title})`)
-        );
-      }
-
-      return false;
-    },
-    [studyGuides]
-  );
-
-  // Try to match guides when allGuideAnalytics changes
-  useEffect(() => {
-    // Ensure allGuideAnalytics and study_guides exist before accessing them
-    if (
-      allGuideAnalytics &&
-      allGuideAnalytics.study_guides &&
-      allGuideAnalytics.study_guides.length > 0 &&
-      studyGuides &&
-      studyGuides.length > 0
-    ) {
-      console.log('Matching study guides with analytics...');
-
-      // Now TypeScript knows allGuideAnalytics is not null
-      const guideWithData = allGuideAnalytics.study_guides.find(
-        (guide: GuideAnalytics) => guide.total_tests > 0
-      );
-
-      if (guideWithData) {
-        console.log(
-          `Found guide with data: ${guideWithData.study_guide_id}, trying to select it`
-        );
-
-        // Try to find this guide in studyGuides
-        const guideIndex = studyGuides.findIndex(
-          (guide: DashboardGuide) => guide.id === guideWithData.study_guide_id
-        );
-
-        if (guideIndex >= 0) {
-          console.log(`Found guide at index ${guideIndex}, selecting it`);
-          setSelectedGuideIndex(guideIndex);
-        } else {
-          console.log(
-            `Guide not found in studyGuides, something may be wrong with the filtering`
-          );
-          console.log(
-            'Available guides:',
-            studyGuides.map((g) => `${g.id} (${g.title})`)
-          );
-        }
-      }
-    }
-  }, [allGuideAnalytics, studyGuides]);
-
-  // Modify the claim anonymous sessions function to only show for new users
-  const handleClaimAnonymousSessions = useCallback(async () => {
-    if (!userId || !isNewUser) return;
-
-    try {
-      setIsClaimingAnonymousSessions(true);
-      const token = await supabase.auth
-        .getSession()
-        .then((res) => res.data.session?.access_token);
-
-      const response = await fetch(ENDPOINTS.claimAnonymousSessions, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ user_id: userId }),
-      });
-
-      if (!response.ok) {
-        console.error('Error response:', await response.text());
-        throw new Error(
-          `Server returned ${response.status}: ${response.statusText}`
-        );
-      }
-
-      const result = await response.json();
-
-      if (result.success) {
-        toast.success(
-          `Successfully claimed ${result.claimed_count} anonymous sessions!`
-        );
-        // After claiming, refetch with includeAnonymous=true
-        mutateDashboardData();
-      } else {
-        toast.info(result.message || 'No anonymous sessions found to claim');
-      }
-    } catch (error) {
-      console.error('Error claiming anonymous sessions:', error);
-      toast.error('Failed to claim anonymous sessions. Please try again.');
-    } finally {
-      setIsClaimingAnonymousSessions(false);
-    }
-  }, [userId, supabase, mutateDashboardData, isNewUser]);
-
-  // Manually refresh study hours data when on dashboard tab - REPLACE THIS BLOCK
-  useEffect(() => {
-    // Check if session_id exists but user is logged in - this means we need to start a new session
-    const hasSessionId = localStorage.getItem('session_id');
-    const sessionStarted = { current: false }; // Use object to track if we've started a session
-
-    if (!hasSessionId && userId && !sessionStarted.current) {
-      console.log(
-        'No session found but user is logged in, starting new session'
-      );
-      sessionStarted.current = true;
-      startNewSession(userId);
-    }
-
-    // Remove the redundant interval - SWR's refreshInterval handles this
-  }, [userId, mutateDashboardData]);
-
-  // Session activity monitoring
-  useEffect(() => {
-    // Only run on the client
-    if (typeof window === 'undefined') return;
-
-    // Initialize session activity monitoring and get the cleanup function
-    const cleanupSessionActivity = initSessionActivity();
-
-    // Return the cleanup function to be called when component unmounts
-    return () => {
-      if (cleanupSessionActivity) {
-        cleanupSessionActivity();
-      }
-    };
-  }, []);
-
-  // Modify the startNewSession function to include session activity monitoring
-  const startNewSession = async (userId: string) => {
-    try {
-      console.log('Starting new session for dashboard');
-      const token = await supabase.auth
-        .getSession()
-        .then((res) => res.data.session?.access_token);
-
-      const response = await fetch(ENDPOINTS.startSession, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          device: 'browser',
-          user_id: userId,
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        localStorage.setItem('session_id', data.session_id);
-        console.log('Dashboard session started:', data.session_id);
-
-        // Initialize session activity monitoring since we started a new session
-        initSessionActivity();
-
-        // Refresh study hours to include this new session
-        mutateDashboardData();
-      } else {
-        console.error(
-          'Failed to start dashboard session:',
-          await response.text()
-        );
-      }
-    } catch (error) {
-      console.error('Error starting dashboard session:', error);
-    }
-  };
 
   // Generate default values for the accordion to have all items open
   const defaultAccordionValues = useMemo(() => {
@@ -796,7 +697,7 @@ export default function DashboardPage() {
                 </p>
               </motion.div>
 
-              {isLoading ? (
+              {!dashboardData && !dashboardError ? (
                 <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
                   <Loader2 className="h-8 w-8 animate-spin text-[var(--color-primary)]" />
                   <p className="text-lg text-gray-600">
@@ -852,32 +753,14 @@ export default function DashboardPage() {
                                 {enhancedStudyHours?.total_hours === 0 ? (
                                   <div className="space-y-2">
                                     <p className="text-gray-600">
-                                      {Messages.NO_STUDY_HOURS}
+                                      Complete some tests to see total time.
                                     </p>
-                                    {userId && isNewUser && (
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        className="mt-2 text-xs"
-                                        onClick={handleClaimAnonymousSessions}
-                                        disabled={isClaimingAnonymousSessions}
-                                      >
-                                        {isClaimingAnonymousSessions ? (
-                                          <>
-                                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                                            Claiming...
-                                          </>
-                                        ) : (
-                                          'Find My Sessions'
-                                        )}
-                                      </Button>
-                                    )}
                                   </div>
                                 ) : (
                                   <>
                                     <div className="flex items-baseline">
                                       <span className="text-4xl font-bold text-gray-900">
-                                        {enhancedStudyHours.total_hours}
+                                        {enhancedStudyHours?.total_hours}
                                       </span>
                                       <span className="ml-2 text-gray-600">
                                         hours total
@@ -947,82 +830,6 @@ export default function DashboardPage() {
                             </CardContent>
                           </motion.div>
                         </motion.div>
-
-                        {/* Study Time Periods Section */}
-                        {enhancedStudyHours?.time_periods &&
-                          enhancedStudyHours.time_periods.length > 0 && (
-                            <motion.div variants={fadeInUp} className="mb-12">
-                              <Card className="bg-white shadow-lg">
-                                <CardHeader className="border-b border-gray-100">
-                                  <div className="flex justify-between items-center">
-                                    <CardTitle className="text-2xl font-bold text-gray-900 flex items-center">
-                                      <Calendar className="h-6 w-6 text-[var(--color-primary)] mr-2" />
-                                      Study Activity
-                                    </CardTitle>
-                                    <div className="flex items-center space-x-2">
-                                      <TabsList className="bg-gray-100">
-                                        <TabsTrigger
-                                          value="week"
-                                          onClick={() =>
-                                            setStudyTimeView('week')
-                                          }
-                                          className={
-                                            studyTimeView === 'week'
-                                              ? 'bg-white'
-                                              : ''
-                                          }
-                                        >
-                                          Week
-                                        </TabsTrigger>
-                                      </TabsList>
-                                    </div>
-                                  </div>
-                                </CardHeader>
-                                <CardContent className="p-6">
-                                  <div className="space-y-5">
-                                    {enhancedStudyHours.time_periods.map(
-                                      (period: TimePeriod, index: number) => (
-                                        <motion.div
-                                          key={period.period}
-                                          initial={{ opacity: 0, y: 10 }}
-                                          animate={{ opacity: 1, y: 0 }}
-                                          transition={{ delay: index * 0.05 }}
-                                          className="relative"
-                                        >
-                                          <div className="flex justify-between items-center mb-2">
-                                            <div className="flex items-center">
-                                              <BarChart3 className="h-4 w-4 text-gray-500 mr-2" />
-                                              <span className="text-sm font-medium text-gray-700">
-                                                {period.period}
-                                              </span>
-                                            </div>
-                                            <div className="flex items-center space-x-3">
-                                              <span className="text-sm text-gray-500">
-                                                {period.session_count}{' '}
-                                                {period.session_count === 1
-                                                  ? 'session'
-                                                  : 'sessions'}
-                                              </span>
-                                              <span className="text-sm font-bold text-[var(--color-primary)]">
-                                                {period.hours.toFixed(1)} hrs
-                                              </span>
-                                            </div>
-                                          </div>
-                                          <Progress
-                                            value={Math.min(
-                                              period.hours * 10,
-                                              100
-                                            )}
-                                            className="h-2"
-                                          />
-                                        </motion.div>
-                                      )
-                                    )}
-                                  </div>
-                                </CardContent>
-                              </Card>
-                            </motion.div>
-                          )}
 
                         <motion.div
                           variants={fadeInUp}
@@ -1157,7 +964,7 @@ export default function DashboardPage() {
                               </CardTitle>
                             </CardHeader>
                             <CardContent className="p-4">
-                              {isLoading ? (
+                              {!testAnalytics && !dashboardError ? (
                                 <div className="flex flex-col items-center justify-center py-6">
                                   <Loader2 className="h-6 w-6 animate-spin text-[var(--color-primary)]" />
                                   <p className="mt-3 text-sm text-gray-600">
@@ -1174,7 +981,11 @@ export default function DashboardPage() {
                                     <p className="text-xs text-gray-500">
                                       Completed on{' '}
                                       {new Date(
-                                        testAnalytics.latest_test.submitted_at
+                                        testAnalytics.latest_test.attempts?.[
+                                          testAnalytics.latest_test.attempts
+                                            .length - 1
+                                        ]?.submitted_at ??
+                                          testAnalytics.latest_test.submitted_at
                                       ).toLocaleDateString('en-US', {
                                         month: 'long',
                                         day: 'numeric',
@@ -1202,14 +1013,25 @@ export default function DashboardPage() {
                                       </h4>
                                       <div className="flex items-baseline">
                                         <span className="text-2xl font-bold text-gray-900">
-                                          {testAnalytics.latest_test.accuracy.toFixed(
-                                            0
-                                          )}
+                                          {(
+                                            testAnalytics.latest_test
+                                              .attempts?.[
+                                              testAnalytics.latest_test.attempts
+                                                .length - 1
+                                            ]?.accuracy ??
+                                            testAnalytics.latest_test.accuracy
+                                          ).toFixed(0)}
                                           %
                                         </span>
                                       </div>
                                       <p className="mt-1 text-xs text-gray-600">
-                                        ({testAnalytics.latest_test.score}/
+                                        (
+                                        {testAnalytics.latest_test.attempts?.[
+                                          testAnalytics.latest_test.attempts
+                                            .length - 1
+                                        ]?.score ??
+                                          testAnalytics.latest_test.score}
+                                        /
                                         {
                                           testAnalytics.latest_test
                                             .total_questions
@@ -1229,11 +1051,23 @@ export default function DashboardPage() {
                                       <div className="flex items-baseline">
                                         <span className="text-2xl font-bold text-gray-900">
                                           {formatTime(
-                                            testAnalytics.latest_test.time_taken
+                                            testAnalytics.latest_test
+                                              .attempts?.[
+                                              testAnalytics.latest_test.attempts
+                                                .length - 1
+                                            ]?.time_taken ??
+                                              testAnalytics.latest_test
+                                                .time_taken ??
+                                              0
                                           )}
                                         </span>
-                                        {testAnalytics.latest_test.time_taken <
-                                          60 && (
+                                        {(testAnalytics.latest_test.attempts?.[
+                                          testAnalytics.latest_test.attempts
+                                            .length - 1
+                                        ]?.time_taken ??
+                                          testAnalytics.latest_test
+                                            .time_taken ??
+                                          0) < 60 && (
                                           <span className="ml-1 text-xs text-gray-600">
                                             seconds
                                           </span>
@@ -1245,13 +1079,14 @@ export default function DashboardPage() {
                                       variants={fadeInUp}
                                       className="bg-white border hover:shadow-md transition-all duration-300 rounded-lg p-4 relative"
                                     >
-                                      <CheckCircle2 className="h-6 w-6 text-green-500 mb-2" />
+                                      <Activity className="h-6 w-6 text-blue-500 mb-2" />
                                       <h4 className="text-base font-semibold text-gray-700 mb-1">
-                                        Status
+                                        Total Attempts
                                       </h4>
                                       <div className="flex items-baseline">
                                         <span className="text-2xl font-bold text-gray-900 capitalize">
-                                          {testAnalytics.latest_test.status}
+                                          {testAnalytics.latest_test
+                                            .total_attempts ?? 1}
                                         </span>
                                       </div>
                                     </motion.div>
@@ -1275,20 +1110,42 @@ export default function DashboardPage() {
                     </TabsContent>
 
                     <TabsContent value="guide-specific">
-                      <GuideStats
-                        selectedGuide={selectedGuide || null}
-                        guideAnalytics={guideAnalytics || null}
-                        allGuideAnalytics={
-                          allGuideAnalytics?.study_guides || []
-                        }
-                        onPreviousGuide={handlePreviousGuide}
-                        onNextGuide={handleNextGuide}
-                        onSelectGuide={selectGuideById}
-                      />
+                      {!dashboardData?.guide_analytics && !dashboardError ? (
+                        <div className="flex justify-center items-center p-10">
+                          <Loader2 className="h-8 w-8 animate-spin text-[var(--color-primary)]" />
+                          <p className="ml-3 text-lg text-gray-600">
+                            Loading Guide Stats...
+                          </p>
+                        </div>
+                      ) : !dashboardData?.guide_analytics ||
+                        dashboardData.guide_analytics.length === 0 ? (
+                        <p className="text-gray-600 text-center py-10">
+                          No guide-specific analytics available yet. Complete
+                          some quizzes!
+                        </p>
+                      ) : (
+                        <motion.div
+                          variants={staggerContainer}
+                          initial="initial"
+                          animate="animate"
+                          className="grid gap-6 md:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3" // Adjust grid layout as needed
+                        >
+                          {/* Map over analytics and render the inner component */}
+                          {dashboardData.guide_analytics.map(
+                            (guideAnalytic: GuideAnalytics, index: number) => (
+                              <GuideAnalyticCard
+                                key={guideAnalytic.study_guide_id || index}
+                                guideAnalytic={guideAnalytic}
+                                userId={userId}
+                              />
+                            )
+                          )}
+                        </motion.div>
+                      )}
                     </TabsContent>
 
                     <TabsContent value="topic-mastery">
-                      {!rawMasteryData ? (
+                      {!rawMasteryData && !dashboardError ? (
                         <div className="flex justify-center items-center p-10">
                           <Loader2 className="h-8 w-8 animate-spin text-[var(--color-primary)]" />
                           <p className="ml-3 text-lg text-gray-600">
