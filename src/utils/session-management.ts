@@ -173,10 +173,12 @@ export const endActiveSession = async (sessionId: string) => {
  * @param sessionId The session ID to end
  */
 export const showInactivityWarning = async (sessionId: string) => {
-  let countdownTimer: NodeJS.Timeout;
+  let countdownTimer: NodeJS.Timeout | null = null;
 
   const handleContinue = () => {
-    clearTimeout(countdownTimer);
+    if (countdownTimer) {
+      clearTimeout(countdownTimer);
+    }
     document.removeEventListener('mousemove', handleContinue);
     document.removeEventListener('keydown', handleContinue);
     document.removeEventListener('click', handleContinue);
@@ -195,7 +197,7 @@ export const showInactivityWarning = async (sessionId: string) => {
           duration: 5000,
         });
         // Redirect to home page after 5 seconds
-        setTimeout(() => {
+        countdownTimer = setTimeout(() => {
           window.location.href = '/';
         }, 5000);
       },

@@ -35,7 +35,10 @@ export function Header() {
       setIsLoggingOut(true);
 
       // Use our utility function to end the active session
-      await endActiveSession();
+      const sessionId = localStorage.getItem('session_id');
+      if (sessionId) {
+        await endActiveSession(sessionId);
+      }
 
       // Sign out from Supabase
       const supabase = createClient();
