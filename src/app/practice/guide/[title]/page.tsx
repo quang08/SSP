@@ -280,7 +280,7 @@ const StudyGuidePage: React.FC = () => {
   );
 
   // Process the study guide to add completion status, mastery status, and lock status to sections
-  const processedGuide = studyGuide
+  const processedGuide: StudyGuideData | null = studyGuide
     ? {
         ...studyGuide,
         chapters: studyGuide.chapters.map((chapter: Chapter) => ({
@@ -361,19 +361,20 @@ const StudyGuidePage: React.FC = () => {
 
   // Helper function to find a section by title in the processed guide
   const findSectionByTitle = (
-    guide: any,
+    guide: StudyGuideData | null,
     sectionTitle: string
   ): Section | null => {
     if (!guide) return null;
 
-    for (const chapter of guide.chapters) {
-      for (const section of chapter.sections) {
+    for (const chapter of guide.chapters as Chapter[]) {
+      for (const section of chapter.sections as Section[]) {
         if (section.title === sectionTitle) {
           return section;
         }
       }
     }
 
+    // Add explicit return null if no section is found
     return null;
   };
 
@@ -939,7 +940,10 @@ const StudyGuidePage: React.FC = () => {
                                                 </h4>
                                                 <ul className="list-disc list-inside space-y-2 text-gray-700">
                                                   {section.key_concepts.map(
-                                                    (concept, index) => (
+                                                    (
+                                                      concept: string,
+                                                      index: number
+                                                    ) => (
                                                       <li key={index}>
                                                         {renderTextWithLatex(
                                                           concept
@@ -974,7 +978,10 @@ const StudyGuidePage: React.FC = () => {
                                                 0 && (
                                                 <div className="space-y-2">
                                                   {section.source_texts.map(
-                                                    (text, index) => (
+                                                    (
+                                                      text: string,
+                                                      index: number
+                                                    ) => (
                                                       <div
                                                         key={index}
                                                         className="p-3 bg-gray-50 rounded-lg border border-gray-200"
@@ -1002,7 +1009,10 @@ const StudyGuidePage: React.FC = () => {
                                                   </p>
                                                   <ul className="list-disc list-inside space-y-1 text-gray-600">
                                                     {section.prerequisite_sections.map(
-                                                      (prereq, index) => (
+                                                      (
+                                                        prereq: string,
+                                                        index: number
+                                                      ) => (
                                                         <li
                                                           key={index}
                                                           className="flex items-center gap-2"

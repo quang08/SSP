@@ -73,6 +73,19 @@ import {
 } from 'recharts';
 import { format } from 'date-fns';
 
+// Define interfaces for clearer typing
+interface Attempt {
+  attempt_id?: string;
+  attempt_number: number;
+  accuracy?: number;
+}
+
+interface LatestTest {
+  attempts?: Attempt[];
+  // Include other potential fields from latest_test if known
+  // e.g., submitted_at: string;
+}
+
 // MathJax configuration
 const mathJaxConfig = {
   loader: {
@@ -289,16 +302,16 @@ const GuideAnalyticCard = ({
             </span>
           </div>
           {/* Attempt Progression */}
-          {(guideAnalytic.latest_test as any)?.attempts &&
-            (guideAnalytic.latest_test as any).attempts.length > 0 && (
+          {(guideAnalytic.latest_test as LatestTest)?.attempts &&
+            (guideAnalytic.latest_test as LatestTest).attempts!.length > 0 && (
               <div className="pt-3 border-t border-gray-100">
                 <h4 className="text-sm font-medium text-gray-700 mb-2">
                   Latest Test Attempts:
                 </h4>
                 <div className="space-y-1">
-                  {(guideAnalytic.latest_test as any).attempts
-                    .slice(-5)
-                    .map((attempt: any) => (
+                  {(guideAnalytic.latest_test as LatestTest)
+                    .attempts!.slice(-5)
+                    .map((attempt: Attempt) => (
                       <div
                         key={attempt.attempt_id || attempt.attempt_number}
                         className="flex justify-between items-center text-xs bg-gray-50 px-2 py-1 rounded"
@@ -307,7 +320,7 @@ const GuideAnalyticCard = ({
                           Attempt {attempt.attempt_number}:
                         </span>
                         <span
-                          className={`font-medium ${attempt.accuracy >= 80 ? 'text-green-600' : 'text-amber-600'}`}
+                          className={`font-medium ${(attempt.accuracy ?? 0) >= 80 ? 'text-green-600' : 'text-amber-600'}`}
                         >
                           {attempt.accuracy?.toFixed(0) ?? 'N/A'}%
                         </span>

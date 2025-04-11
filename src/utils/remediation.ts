@@ -2,6 +2,26 @@ import { createClient } from '@/utils/supabase/client';
 import { ENDPOINTS } from '@/config/urls';
 import { toast } from 'sonner';
 
+// Define interfaces for review materials response
+interface IncorrectQuestionSummary {
+  question: string;
+  user_answer: string;
+  correct_answer: string;
+}
+
+interface ReviewMaterialsResponse {
+  review_id: string;
+  user_id: string;
+  study_guide_id: string;
+  topic_id: string;
+  submission_id: string;
+  review_recommended: boolean;
+  knowledge_gaps: string[];
+  content: string;
+  incorrect_questions: IncorrectQuestionSummary[];
+  generated_at: string;
+}
+
 /**
  * Mark a remediation item as viewed
  * @param remediation_id The ID of the remediation to mark as viewed
@@ -132,7 +152,7 @@ export const getReviewMaterials = async (
   studyGuideId: string,
   topicId: string,
   submissionId: string
-): Promise<any> => {
+): Promise<ReviewMaterialsResponse> => {
   try {
     const supabase = createClient();
 

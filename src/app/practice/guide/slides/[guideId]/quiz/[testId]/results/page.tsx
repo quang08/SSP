@@ -311,11 +311,9 @@ const SlidesQuizResultsPage: React.FC = () => {
     if (!testId || !results || !guideId) return;
 
     // 1. Reliably get the submission ID from available sources
-    let submissionIdToUse =
+    const submissionIdToUse =
       actualSubmissionId ||
-      results.submission_id ||
-      (results as any).result_id || // Check for result_id (from user feedback)
-      (results as any)._id || // Check for _id as another possibility
+      results?.submission_id ||
       searchParams.get('submission') ||
       '';
 
@@ -323,9 +321,7 @@ const SlidesQuizResultsPage: React.FC = () => {
     if (!submissionIdToUse) {
       console.error('Could not determine submission ID for retry.', {
         actualSubmissionId,
-        resultsSubmissionId: results.submission_id,
-        resultsResultId: (results as any).result_id,
-        results_id: (results as any)._id,
+        resultsSubmissionId: results?.submission_id,
         searchParamsSubmission: searchParams.get('submission'),
       });
       toast.error('Cannot retry test: Missing submission context.');
@@ -661,13 +657,11 @@ const SlidesQuizResultsPage: React.FC = () => {
 
                 {/* Conditionally render Remediation Button (Added) */}
                 {(results.needs_remediation || results.remediation_viewed) &&
-                  (results.submission_id ||
-                    (results as any).result_id ||
-                    (results as any)._id) && // Check multiple ID fields
+                  results?.submission_id &&
                   guideId && (
                     <div className="mb-6 text-center">
                       <Link
-                        href={`/practice/guide/slides/${guideId}/quiz/${testId}/remediation?submission=${(results as any).result_id || results.submission_id || (results as any)._id}&study_guide_id=${guideId}`}
+                        href={`/practice/guide/slides/${guideId}/quiz/${testId}/remediation?submission=${results?.submission_id}&study_guide_id=${guideId}`}
                         passHref
                       >
                         <Button variant="secondary" size="lg">
@@ -704,10 +698,10 @@ const SlidesQuizResultsPage: React.FC = () => {
                           <p className="text-yellow-600 mb-4">
                             After 3 attempts, your highest score was{' '}
                             {results.accuracy.toFixed(0)}% (Mastery requires{' '}
-                            {masteryThreshold}%). According to Bloom's Mastery
-                            Theory, you must review the remediation materials
-                            and then achieve mastery on a retry to proceed to
-                            the next test.
+                            {masteryThreshold}%). According to Bloom&apos;s
+                            Mastery Theory, you must review the remediation
+                            materials and then achieve mastery on a retry to
+                            proceed to the next test.
                           </p>
                           <p className="text-yellow-700 font-medium mb-4">
                             Please review the materials and then retry the test.
@@ -718,7 +712,7 @@ const SlidesQuizResultsPage: React.FC = () => {
                             <Button
                               onClick={() =>
                                 router.push(
-                                  `/practice/guide/slides/${guideId}/quiz/${testId}/remediation?submission=${(results as any).result_id || results.submission_id || (results as any)._id}&study_guide_id=${guideId}`
+                                  `/practice/guide/slides/${guideId}/quiz/${testId}/remediation?submission=${results?.submission_id}&study_guide_id=${guideId}`
                                 )
                               }
                               className="bg-yellow-500 hover:bg-yellow-600 text-white"
@@ -777,7 +771,7 @@ const SlidesQuizResultsPage: React.FC = () => {
                         question.question_type === 'multiple_choice' &&
                         question.user_answer &&
                         question.choices
-                          ? `${question.user_answer}. ${question.choices[question.user_answer]}`
+                          ? `${question.user_answer}. ${question.choices?.[question.user_answer] ?? ''}`
                           : question.user_answer || ''
                       }
                       userAnswerText={
@@ -790,7 +784,7 @@ const SlidesQuizResultsPage: React.FC = () => {
                         question.question_type === 'multiple_choice' &&
                         question.correct_answer &&
                         question.choices
-                          ? `${question.correct_answer}. ${question.choices[question.correct_answer]}`
+                          ? `${question.correct_answer}. ${question.choices?.[question.correct_answer] ?? ''}`
                           : question.question_type === 'short_answer'
                             ? question.ideal_answer || ''
                             : question.correct_answer_text || ''
