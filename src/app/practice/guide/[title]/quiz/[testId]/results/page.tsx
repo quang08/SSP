@@ -230,6 +230,8 @@ const QuizResultsPage: React.FC = () => {
   // Get submission ID from URL query parameters
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [retryLoading, setRetryLoading] = useState<boolean>(false);
+  const supabase = createClient();
 
   // State for additional data from the consolidated endpoint
   const [masteryThresholds, setMasteryThresholds] = useState<{
@@ -337,30 +339,46 @@ const QuizResultsPage: React.FC = () => {
 
   // Handle retry
   const handleRetry = async () => {
-    if (!userId || !testId || !results?.study_guide_id) {
+    // Use results?._id or results?.result_id as the primary source for previous_attempt_id
+    const actualSubmissionId = results?._id || (results as any)?.result_id;
+
+    if (!userId || !testId || !results?.study_guide_id || !actualSubmissionId) {
       toast.error(
-        'Cannot retry test: Missing user, test, or study guide information.'
+        'Cannot retry test: Missing user, test, study guide, or submission information.'
       );
+      console.error('Retry Pre-check Failed', {
+        userId,
+        testId,
+        guideId: results?.study_guide_id,
+        actualSubmissionId,
+      });
       return;
     }
 
+    setRetryLoading(true);
     try {
-      const response = await fetchWithAuth(ENDPOINTS.retryTest, {
+      // Use fetchWithAuth for consistency if needed, or keep direct fetch if preferred
+      const token = await supabase.auth
+        .getSession()
+        .then((res) => res.data.session?.access_token);
+      const response = await fetch(ENDPOINTS.retryTest, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           user_id: userId,
           test_id: testId,
           study_guide_id: results.study_guide_id,
+          previous_attempt_id: actualSubmissionId, // Pass the correct ID
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
         console.error('Retry error response:', errorData);
-        throw new Error(errorData.message || 'Failed to retry test');
+        throw new Error(errorData.message || 'Failed to process retry request');
       }
 
       const retryData = await response.json();
@@ -369,22 +387,15 @@ const QuizResultsPage: React.FC = () => {
         toast.warning(
           retryData.message || 'Cannot retry this test at the moment.'
         );
+        setRetryLoading(false);
         return;
       }
 
       toast.success(
-        retryData.message ||
-          'Test retry initialized. Redirecting to quiz page...'
+        retryData.message || 'Test retry initialized. Redirecting...'
       );
 
       // Navigate back to quiz page with retry parameters
-      // Get the actual submission ID reliably
-      const actualSubmissionId = results?._id || data?.submission?._id;
-      if (!actualSubmissionId) {
-        toast.error('Cannot determine submission ID for retry.');
-        return;
-      }
-
       router.push(
         `/practice/guide/${encodeURIComponent(title)}/quiz/${testId}?retry=true&attempt=${retryData.attempt_number}&previous=${actualSubmissionId}`
       );
@@ -393,7 +404,9 @@ const QuizResultsPage: React.FC = () => {
         `Failed to initialize retry: ${err instanceof Error ? err.message : 'Unknown error'}`
       );
       console.error('Error retrying test:', err);
+      setRetryLoading(false); // Ensure loading state is reset on error
     }
+    // No need for finally block if navigation happens on success
   };
 
   return (
@@ -525,6 +538,28 @@ const QuizResultsPage: React.FC = () => {
                         </span>
                         <span className="ml-2 text-gray-600">seconds</span>
                       </div>
+                      {/* Add Retry button conditionally */}
+                      {results.can_retry && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleRetry}
+                          disabled={retryLoading}
+                          className="mt-4 w-full text-blue-600 border-blue-300 hover:bg-blue-50"
+                        >
+                          {retryLoading ? (
+                            <>
+                              <span className="mr-2">Loading...</span>
+                              <RefreshCw className="h-4 w-4 animate-spin" />
+                            </>
+                          ) : (
+                            <>
+                              <RefreshCw className="h-4 w-4 mr-2" />
+                              Retry Test ({results.attempts_remaining} left)
+                            </>
+                          )}
+                        </Button>
+                      )}
                     </CardContent>
                   </Card>
 
@@ -551,18 +586,6 @@ const QuizResultsPage: React.FC = () => {
                               : 'Incomplete'}
                         </span>
                       </div>
-
-                      {/* Add retry button if available */}
-                      {canRetry && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={handleRetry}
-                          className="mt-2 w-full"
-                        >
-                          Retry Test ({attemptsRemaining} left)
-                        </Button>
-                      )}
                     </CardContent>
                   </Card>
                 </div>
