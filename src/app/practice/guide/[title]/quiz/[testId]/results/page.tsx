@@ -224,8 +224,28 @@ interface ConsolidatedResultsResponse {
 const QuizResultsPage: React.FC = () => {
   const params = useParams();
   const testId = typeof params.testId === 'string' ? params.testId : '';
-  const title = typeof params.title === 'string' ? params.title : '';
+  const rawTitle = typeof params.title === 'string' ? params.title : '';
   const router = useRouter();
+
+  // Fully decode the title parameter from the URL
+  const title = useMemo(() => {
+    let decoded = rawTitle;
+    try {
+      // Keep decoding until the string doesn't change anymore
+      while (true) {
+        const nextDecoded = decodeURIComponent(decoded);
+        if (nextDecoded === decoded) {
+          break;
+        }
+        decoded = nextDecoded;
+      }
+    } catch (e) {
+      console.error('Error decoding title param:', e);
+      // Fallback to the raw title if decoding fails unexpectedly
+      return rawTitle;
+    }
+    return decoded;
+  }, [rawTitle]);
 
   // Get submission ID from URL query parameters
   const [submissionId, setSubmissionId] = useState<string | null>(null);
@@ -415,7 +435,7 @@ const QuizResultsPage: React.FC = () => {
         <Header />
         <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <Link
-            href={`/practice/guide/${decodeURIComponent(title)}`}
+            href={`/practice/guide/${title}`}
             className="inline-flex items-center text-gray-600 hover:text-gray-900 mb-8"
           >
             <ChevronLeft className="h-4 w-4 mr-1" />

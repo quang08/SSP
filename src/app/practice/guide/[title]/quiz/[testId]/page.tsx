@@ -480,16 +480,31 @@ const QuizPage: React.FC = () => {
       const sectionTitle = quiz.section_title || '';
       console.log(`Submitting test for section: ${sectionTitle}`);
 
-      // Find matching chapter/section in the study guide
+      // Normalize the section title we are looking for
+      const normalizedSearchTitle = sectionTitle.trim().toLowerCase();
+
+      // Find matching chapter title
       let chapterTitle = '';
-      for (const chapter of studyGuideData.chapters as Chapter[]) {
-        const matchingSection = chapter.sections.find(
-          (section: Section) => section.title === sectionTitle
-        );
-        if (matchingSection) {
-          chapterTitle = chapter.title;
-          break;
+      if (studyGuideData?.chapters) {
+        for (const chapter of studyGuideData.chapters as Chapter[]) {
+          // Find the section by comparing normalized titles
+          const matchingSection = chapter.sections.find(
+            (section: Section) =>
+              section.title &&
+              section.title.trim().toLowerCase() === normalizedSearchTitle
+          );
+          if (matchingSection) {
+            chapterTitle = chapter.title;
+            break;
+          }
         }
+      }
+
+      // Add a warning if chapterTitle couldn't be found
+      if (!chapterTitle) {
+        console.warn(
+          `Could not find chapter title for section: "${sectionTitle}" in the fetched study guide data. Sending empty chapter title.`
+        );
       }
 
       // Format multiple choice answers (as QuizQuestion)
