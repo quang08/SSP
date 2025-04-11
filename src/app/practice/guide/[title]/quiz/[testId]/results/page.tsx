@@ -29,6 +29,13 @@ import { MathJaxContext } from 'better-react-mathjax';
 import useSWR from 'swr';
 import { toast } from 'sonner';
 import { createClient } from '@/utils/supabase/client';
+import RemediationChoice from '@/components/practice/RemediationChoice';
+import { motion } from 'framer-motion';
+import {
+  AccordionItem,
+  AccordionContent,
+  Accordion,
+} from '@/components/ui/accordion';
 
 // MathJax configuration
 const mathJaxConfig = {
@@ -203,6 +210,48 @@ const fetcher = async (url: string) => {
   return res.json();
 };
 
+// --- Interfaces ---
+// Define base interfaces needed for extension
+interface Section {
+  title: string;
+  key_concepts?: string[];
+  source_pages?: string[];
+  source_texts?: string[];
+  prerequisite_sections?: string[];
+}
+
+interface Chapter {
+  title: string;
+  sections: Section[];
+}
+
+interface StudyGuideData {
+  title: string;
+  chapters: Chapter[];
+  _id?: string; // Include potential original fields
+  study_guide_id?: string;
+}
+
+interface ProcessedSection extends Section {
+  // Replace 'Section' if different base type
+  completed: boolean;
+  is_unlocked: boolean;
+  is_mastered: boolean;
+  review_recommended: boolean;
+  attempts_used: number;
+  mastery_percentage: number;
+}
+
+interface ProcessedChapter extends Omit<Chapter, 'sections'> {
+  // Replace 'Chapter' if different base type
+  sections: ProcessedSection[];
+}
+
+interface ProcessedStudyGuideData extends Omit<StudyGuideData, 'chapters'> {
+  // Replace 'StudyGuideData' if different base type
+  chapters: ProcessedChapter[];
+}
+
 interface ConsolidatedResultsResponse {
   submission: QuizResults;
   mastery_thresholds?: {
@@ -360,7 +409,7 @@ const QuizResultsPage: React.FC = () => {
   // Handle retry
   const handleRetry = async () => {
     // Use results?._id or results?.result_id as the primary source for previous_attempt_id
-    const actualSubmissionId = results?._id || (results as any)?.result_id;
+    const actualSubmissionId = results?._id || results?.result_id;
 
     if (!userId || !testId || !results?.study_guide_id || !actualSubmissionId) {
       toast.error(
@@ -427,6 +476,27 @@ const QuizResultsPage: React.FC = () => {
       setRetryLoading(false); // Ensure loading state is reset on error
     }
     // No need for finally block if navigation happens on success
+  };
+
+  // Process the study guide to add completion status, mastery status, and lock status to sections
+  const processedGuide: ProcessedStudyGuideData | null =
+    (data as ProcessedStudyGuideData) || null;
+
+  // Helper function to find a section by title in the processed guide
+  const findSectionByTitle = (
+    guide: ProcessedStudyGuideData | null,
+    sectionTitle: string
+  ): ProcessedSection | null => {
+    if (!guide) return null;
+
+    for (const chapter of guide.chapters as ProcessedChapter[]) {
+      for (const section of chapter.sections as ProcessedSection[]) {
+        if (section.title === sectionTitle) {
+          return section;
+        }
+      }
+    }
+    return null;
   };
 
   return (
@@ -612,11 +682,11 @@ const QuizResultsPage: React.FC = () => {
 
                 {/* Conditionally render Remediation Button */}
                 {(results.needs_remediation || results.remediation_viewed) &&
-                  (results?._id || (results as any)?.result_id) &&
+                  (results?._id || results?.result_id) &&
                   results?.study_guide_id && (
                     <div className="mb-6 text-center">
                       <Link
-                        href={`/practice/guide/${encodeURIComponent(title)}/quiz/${testId}/remediation?submission=${results._id || (results as any).result_id}&study_guide_id=${results.study_guide_id}`}
+                        href={`/practice/guide/${encodeURIComponent(title)}/quiz/${testId}/remediation?submission=${results._id || results.result_id}&study_guide_id=${results.study_guide_id}`}
                         passHref
                       >
                         <Button variant="secondary" size="lg">
