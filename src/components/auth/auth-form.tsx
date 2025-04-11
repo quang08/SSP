@@ -35,7 +35,10 @@ export function AuthForm({ method, onSuccess }: AuthFormProps) {
 
     // End any existing sessions when navigating to auth page
     const endSession = async () => {
-      await endActiveSession();
+      const sessionId = localStorage.getItem('session_id');
+      if (sessionId) {
+        await endActiveSession(sessionId);
+      }
     };
 
     if (typeof window !== 'undefined') {
