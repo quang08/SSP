@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Header } from '@/components/layout/header';
 import Link from 'next/link';
@@ -194,9 +194,29 @@ const BookRemediationPage: React.FC = () => {
   const submissionId = searchParams.get('submission') || '';
   const studyGuideId = searchParams.get('study_guide_id') || ''; // Get study_guide_id from query params
   const testId = typeof params.testId === 'string' ? params.testId : '';
-  const title = typeof params.title === 'string' ? params.title : ''; // Use title for book guides
+  const rawTitle = typeof params.title === 'string' ? params.title : ''; // Use title for book guides
   const router = useRouter();
   const supabase = createClient();
+
+  // Fully decode the title parameter from the URL
+  const title = useMemo(() => {
+    let decoded = rawTitle;
+    try {
+      // Keep decoding until the string doesn't change anymore
+      while (true) {
+        const nextDecoded = decodeURIComponent(decoded);
+        if (nextDecoded === decoded) {
+          break;
+        }
+        decoded = nextDecoded;
+      }
+    } catch (e) {
+      console.error('Error decoding title param:', e);
+      // Fallback to the raw title if decoding fails unexpectedly
+      return rawTitle;
+    }
+    return decoded;
+  }, [rawTitle]);
 
   const [remediation, setRemediation] = useState<RemediationContent | null>(
     null
@@ -312,7 +332,7 @@ const BookRemediationPage: React.FC = () => {
         <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {/* Adjusted Backlink */}
           <Link
-            href={`/practice/guide/${encodeURIComponent(title)}`}
+            href={`/practice/guide/${title}`}
             className="inline-flex items-center text-gray-600 hover:text-gray-900 mb-8"
           >
             <ChevronLeft className="h-4 w-4 mr-1" />
@@ -557,7 +577,7 @@ const BookRemediationPage: React.FC = () => {
                 </Button>
                 {/* Adjusted Backlink */}
                 <Link
-                  href={`/practice/guide/${encodeURIComponent(title)}`}
+                  href={`/practice/guide/${title}`}
                   className="flex items-center justify-center h-11 px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium"
                 >
                   <BookOpen className="h-5 w-5 mr-2" />
@@ -572,7 +592,7 @@ const BookRemediationPage: React.FC = () => {
               </p>
               {/* Adjusted Backlink */}
               <Link
-                href={`/practice/guide/${encodeURIComponent(title)}`}
+                href={`/practice/guide/${title}`}
                 className="mt-4 inline-flex items-center justify-center h-10 px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium"
               >
                 <BookOpen className="h-4 w-4 mr-2" />

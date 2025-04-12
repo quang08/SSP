@@ -270,6 +270,11 @@ interface ConsolidatedResultsResponse {
   needs_remediation?: boolean;
 }
 
+// Add this interface to handle the result_id property
+interface ResultsWithResultId extends QuizResults {
+  result_id?: string;
+}
+
 const QuizResultsPage: React.FC = () => {
   const params = useParams();
   const testId = typeof params.testId === 'string' ? params.testId : '';
@@ -409,7 +414,8 @@ const QuizResultsPage: React.FC = () => {
   // Handle retry
   const handleRetry = async () => {
     // Use results?._id or results?.result_id as the primary source for previous_attempt_id
-    const actualSubmissionId = results?._id || results?.result_id;
+    const actualSubmissionId =
+      results?._id || (results as ResultsWithResultId)?.result_id;
 
     if (!userId || !testId || !results?.study_guide_id || !actualSubmissionId) {
       toast.error(
@@ -682,11 +688,12 @@ const QuizResultsPage: React.FC = () => {
 
                 {/* Conditionally render Remediation Button */}
                 {(results.needs_remediation || results.remediation_viewed) &&
-                  (results?._id || results?.result_id) &&
+                  (results?._id ||
+                    (results as ResultsWithResultId)?.result_id) &&
                   results?.study_guide_id && (
                     <div className="mb-6 text-center">
                       <Link
-                        href={`/practice/guide/${encodeURIComponent(title)}/quiz/${testId}/remediation?submission=${results._id || results.result_id}&study_guide_id=${results.study_guide_id}`}
+                        href={`/practice/guide/${encodeURIComponent(title)}/quiz/${testId}/remediation?submission=${results._id || (results as ResultsWithResultId).result_id}&study_guide_id=${results.study_guide_id}`}
                         passHref
                       >
                         <Button variant="secondary" size="lg">
