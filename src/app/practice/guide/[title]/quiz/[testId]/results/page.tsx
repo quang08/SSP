@@ -630,7 +630,11 @@ const QuizResultsPage: React.FC = () => {
                       </div>
                       <div className="flex items-baseline">
                         <span className="text-4xl font-bold text-gray-900">
-                          {Math.round(results.time_taken || 0)}
+                          {isNaN(results.time_taken) || results.time_taken === 0
+                            ? (results.attempts?.[0]?.time_taken || 0).toFixed(
+                                0
+                              )
+                            : Math.round(results.time_taken || 0)}
                         </span>
                         <span className="ml-2 text-gray-600">seconds</span>
                       </div>
