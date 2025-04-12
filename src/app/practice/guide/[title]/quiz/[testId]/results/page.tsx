@@ -686,6 +686,23 @@ const QuizResultsPage: React.FC = () => {
                               : 'Incomplete'}
                         </span>
                       </div>
+                      {!results.mastered && (
+                        <div className="mt-2">
+                          <div className="w-full bg-gray-200 h-1.5 rounded-full">
+                            <div
+                              className="h-1.5 bg-purple-500 rounded-full"
+                              style={{
+                                width: `${Math.min(100, ((results.attempt_number || 1) / 3) * 100)}%`,
+                              }}
+                            ></div>
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1">
+                            {results.attempts_remaining === 0
+                              ? 'No attempts remaining'
+                              : ``}
+                          </p>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 </div>

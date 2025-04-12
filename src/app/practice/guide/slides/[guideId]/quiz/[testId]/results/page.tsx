@@ -602,7 +602,7 @@ const SlidesQuizResultsPage: React.FC = () => {
                             <div
                               className="h-1.5 bg-purple-500 rounded-full"
                               style={{
-                                width: `${((results.attempt_number || 1) / 3) * 100}%`,
+                                width: `${Math.min(100, ((results.attempt_number || 1) / 3) * 100)}%`,
                               }}
                             ></div>
                           </div>
