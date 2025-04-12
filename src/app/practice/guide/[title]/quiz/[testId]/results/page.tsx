@@ -270,6 +270,11 @@ interface ConsolidatedResultsResponse {
   needs_remediation?: boolean;
 }
 
+// Add this interface to handle the result_id property
+interface ResultsWithResultId extends QuizResults {
+  result_id?: string;
+}
+
 const QuizResultsPage: React.FC = () => {
   const params = useParams();
   const testId = typeof params.testId === 'string' ? params.testId : '';
@@ -409,7 +414,8 @@ const QuizResultsPage: React.FC = () => {
   // Handle retry
   const handleRetry = async () => {
     // Use results?._id or results?.result_id as the primary source for previous_attempt_id
-    const actualSubmissionId = results?._id || results?.result_id;
+    const actualSubmissionId =
+      results?._id || (results as ResultsWithResultId)?.result_id;
 
     if (!userId || !testId || !results?.study_guide_id || !actualSubmissionId) {
       toast.error(
@@ -624,7 +630,11 @@ const QuizResultsPage: React.FC = () => {
                       </div>
                       <div className="flex items-baseline">
                         <span className="text-4xl font-bold text-gray-900">
-                          {Math.round(results.time_taken || 0)}
+                          {isNaN(results.time_taken) || results.time_taken === 0
+                            ? (results.attempts?.[0]?.time_taken || 0).toFixed(
+                                0
+                              )
+                            : Math.round(results.time_taken || 0)}
                         </span>
                         <span className="ml-2 text-gray-600">seconds</span>
                       </div>
@@ -676,17 +686,35 @@ const QuizResultsPage: React.FC = () => {
                               : 'Incomplete'}
                         </span>
                       </div>
+                      {!results.mastered && (
+                        <div className="mt-2">
+                          <div className="w-full bg-gray-200 h-1.5 rounded-full">
+                            <div
+                              className="h-1.5 bg-purple-500 rounded-full"
+                              style={{
+                                width: `${Math.min(100, ((results.attempt_number || 1) / 3) * 100)}%`,
+                              }}
+                            ></div>
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1">
+                            {results.attempts_remaining === 0
+                              ? 'No attempts remaining'
+                              : ``}
+                          </p>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 </div>
 
                 {/* Conditionally render Remediation Button */}
                 {(results.needs_remediation || results.remediation_viewed) &&
-                  (results?._id || results?.result_id) &&
+                  (results?._id ||
+                    (results as ResultsWithResultId)?.result_id) &&
                   results?.study_guide_id && (
                     <div className="mb-6 text-center">
                       <Link
-                        href={`/practice/guide/${encodeURIComponent(title)}/quiz/${testId}/remediation?submission=${results._id || results.result_id}&study_guide_id=${results.study_guide_id}`}
+                        href={`/practice/guide/${encodeURIComponent(title)}/quiz/${testId}/remediation?submission=${results._id || (results as ResultsWithResultId).result_id}&study_guide_id=${results.study_guide_id}`}
                         passHref
                       >
                         <Button variant="secondary" size="lg">
