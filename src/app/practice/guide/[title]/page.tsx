@@ -984,9 +984,9 @@ const StudyGuidePage: React.FC = () => {
                                                     ) => (
                                                       <div
                                                         key={index}
-                                                        className="p-3 bg-gray-50 rounded-lg border border-gray-200"
+                                                        className="p-3 bg-gray-50 rounded-lg border border-gray-200 overflow-x-auto"
                                                       >
-                                                        <p className="text-sm text-gray-600 italic leading-relaxed">
+                                                        <p className="text-sm text-gray-600 italic leading-relaxed break-words whitespace-pre-wrap max-w-full">
                                                           &ldquo;
                                                           {renderTextWithLatex(
                                                             text
