@@ -395,7 +395,7 @@ const StudyGuidePage: React.FC = () => {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ guide_id: studyGuide.study_guide_id }),
+        body: JSON.stringify({ guide_id: processedGuide?.study_guide_id }),
       });
 
       if (response.ok) {
@@ -632,106 +632,7 @@ const StudyGuidePage: React.FC = () => {
     return simpleLatexPattern.test(text);
   };
 
-  // Helper function to render text with LaTeX
-  const renderTextWithLatex = (text: string) => {
-    // First, unescape all double backslashes
-    let processedText = text.replace(/\\\\/g, '\\');
-
-    // Handle special LaTeX commands and symbols
-    processedText = processedText
-      // Handle \mathbb{R} notation
-      .replace(/\\mathbb\{([^}]+)\}/g, (_, p1) => `\\mathbb{${p1}}`)
-      // Handle subscripts and superscripts with multiple characters
-      .replace(/_{([^}]+)}/g, '_{$1}')
-      .replace(/\^{([^}]+)}/g, '^{$1}')
-      // Handle special spacing around operators
-      .replace(/\\sum(?![a-zA-Z])/g, '\\sum\\limits')
-      .replace(/\\int(?![a-zA-Z])/g, '\\int\\limits')
-      .replace(/\\prod(?![a-zA-Z])/g, '\\prod\\limits')
-      // Handle spacing around vertical bars and other delimiters
-      .replace(/\|/g, '\\,|\\,')
-      .replace(/\\mid/g, '\\,|\\,')
-      // Handle matrix transpose
-      .replace(/\\T(?![a-zA-Z])/g, '^{\\intercal}')
-      // Handle common statistical notation
-      .replace(/\\Var/g, '\\operatorname{Var}')
-      .replace(/\\Bias/g, '\\operatorname{Bias}')
-      .replace(/\\MSE/g, '\\operatorname{MSE}')
-      .replace(/\\EPE/g, '\\operatorname{EPE}')
-      // Handle escaped curly braces
-      .replace(/\\\{/g, '{')
-      .replace(/\\\}/g, '}');
-
-    // Split text by existing LaTeX delimiters while preserving the delimiters
-    const parts = processedText.split(
-      /(\$\$[\s\S]*?\$\$|\$[^$\n]*?\$|\\\([^)]*?\\\)|\\\[[\s\S]*?\\\])/g
-    );
-
-    return parts.map((part, index) => {
-      // Generate a more unique key using content hash
-      const key = `${index}-${hashString(part)}`;
-
-      if (
-        part.startsWith('$') ||
-        part.startsWith('\\(') ||
-        part.startsWith('\\[')
-      ) {
-        // Remove the delimiters
-        let latex = part
-          .replace(/^\$\$|\$\$$|^\$|\$$|^\\\(|\\\)$|^\\\[|\\\]$/g, '')
-          .trim();
-
-        const isDisplay = part.startsWith('$$') || part.startsWith('\\[');
-
-        // Use KaTeX for simple expressions and MathJax for complex ones
-        if (isSimpleLatex(latex)) {
-          return (
-            <span
-              key={key}
-              dangerouslySetInnerHTML={{
-                __html: renderWithKatex(latex, isDisplay),
-              }}
-            />
-          );
-        }
-
-        // Wrap the LaTeX in appropriate delimiters for MathJax
-        latex = isDisplay ? `$$${latex}$$` : `$${latex}$`;
-
-        return (
-          <MathJax key={key} inline={!isDisplay} dynamic={true}>
-            {latex}
-          </MathJax>
-        );
-      }
-
-      // Check if the part contains any LaTeX-like content
-      if (part.includes('\\') || /[_^{}]/.test(part)) {
-        // Use KaTeX for simple expressions
-        if (isSimpleLatex(part)) {
-          return (
-            <span
-              key={key}
-              dangerouslySetInnerHTML={{
-                __html: renderWithKatex(part, false),
-              }}
-            />
-          );
-        }
-
-        // Use MathJax for complex expressions
-        return (
-          <MathJax key={key} inline={true} dynamic={true}>
-            {`$${part}$`}
-          </MathJax>
-        );
-      }
-
-      return <span key={key}>{part}</span>;
-    });
-  };
-
-  // // Simple string hashing function for generating unique keys
+  // Simple string hashing function for generating unique keys
   const hashString = (str: string): string => {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
@@ -742,6 +643,74 @@ const StudyGuidePage: React.FC = () => {
     return hash.toString(36); // Convert to base-36 for shorter strings
   };
 
+  // Function to automatically wrap LaTeX expressions with $ delimiters
+  function autoWrapLatexMath(text: string): string {
+    // Step 1: Convert \{ and \} to actual LaTeX commands
+    let processed = text
+      .replace(/\\\{/g, '\\lbrace')
+      .replace(/\\\}/g, '\\rbrace');
+
+    // Step 2: Wrap entire known math block expressions like:
+    // - { x : x^T \hat{\beta} > 0.5 }
+    // - \frac{1}{k}
+    // These patterns contain math symbols or commands
+    const mathBlockPattern =
+      /(?:\\lbrace[^\\]*?\\rbrace|\\frac\s*\{[^{}]*\}\s*\{[^{}]*\}|[a-zA-Z0-9]+[\^_][a-zA-Z0-9{}\\]+|\\[a-zA-Z]+\{[^{}]*\}|\\[a-zA-Z]+)/g;
+
+    processed = processed.replace(mathBlockPattern, (match) => {
+      // Don't wrap if it's already wrapped
+      if (/^\$.*\$/.test(match)) return match;
+      return `$${match}$`;
+    });
+
+    return processed;
+  }
+
+  function wrapUnwrappedLatex(text: string): string {
+    const MATH_BLOCK_PATTERN =
+      /(?<!\$)((\\(sum|frac|hat|mathcal|mathbb|beta|alpha|theta|lambda|mu|pi|phi|infty|[a-zA-Z]+)|[a-zA-Z]+\([^)]*\)|[a-zA-Z0-9]+[\^_][a-zA-Z0-9{}\\]+)[^$.]*)/g;
+
+    const parts = text.split(/(\$.*?\$)/g); // keep already wrapped blocks intact
+
+    return parts
+      .map((part) => {
+        if (/^\$.*\$$/.test(part)) return part;
+
+        return part.replace(MATH_BLOCK_PATTERN, (match) => {
+          // Avoid wrapping if it's just plain variables or punctuation
+          if (/^[a-zA-Z0-9\s.,;:!?]+$/.test(match)) return match;
+          return `$${match.trim()}$`;
+        });
+      })
+      .join('');
+  }
+
+  function sanitizeLatexMath(text: string): string {
+    return text.replace(/\$(.+?)\$/g, (_, math) => {
+      return `$${math.replace(/\\\\/g, '\\')}$`;
+    });
+  }
+
+  const renderTextWithLatex = (text: string) => {
+    const wrapped = wrapUnwrappedLatex(text);
+    const sanitized = sanitizeLatexMath(wrapped);
+    const parts = sanitized.split(/(\$.*?\$)/g);
+
+    return (
+      <span>
+        {parts.map((part, i) =>
+          /^\$.*\$$/.test(part.trim()) ? (
+            <MathJax key={i} inline dynamic>
+              {part}
+            </MathJax>
+          ) : (
+            <span key={i}>{part}</span>
+          )
+        )}
+      </span>
+    );
+  };
+  
   return (
     <MathJaxContext config={mathJaxConfig}>
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
@@ -986,13 +955,13 @@ const StudyGuidePage: React.FC = () => {
                                                         key={index}
                                                         className="p-3 bg-gray-50 rounded-lg border border-gray-200 overflow-x-auto"
                                                       >
-                                                        <p className="text-sm text-gray-600 italic leading-relaxed break-words whitespace-pre-wrap max-w-full">
+                                                        <div className="text-sm text-gray-600 italic leading-relaxed break-words whitespace-pre-wrap max-w-full">
                                                           &ldquo;
                                                           {renderTextWithLatex(
                                                             text
                                                           )}
                                                           &rdquo;
-                                                        </p>
+                                                        </div>
                                                       </div>
                                                     )
                                                   )}
