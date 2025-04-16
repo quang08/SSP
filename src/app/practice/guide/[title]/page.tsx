@@ -884,16 +884,6 @@ const StudyGuidePage: React.FC = () => {
                                               >
                                                 {statusIcon}
                                                 {statusText}
-                                                {section.mastery_percentage !==
-                                                  undefined && (
-                                                  <span className="ml-1">
-                                                    (
-                                                    {Math.round(
-                                                      section.mastery_percentage
-                                                    )}
-                                                    %)
-                                                  </span>
-                                                )}
                                               </span>
                                             )}
                                           </div>
