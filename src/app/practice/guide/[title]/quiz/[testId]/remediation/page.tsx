@@ -385,8 +385,11 @@ const BookRemediationPage: React.FC = () => {
                   <p className="text-sm text-blue-600 mb-4">
                     <span className="font-medium">Required for mastery:</span>{' '}
                     Score at least{' '}
-                    {(remediation.mastery_required * 100).toFixed(0)}% on your
-                    next attempt.
+                    {typeof remediation.mastery_required === 'number' &&
+                    !isNaN(remediation.mastery_required)
+                      ? (remediation.mastery_required * 100).toFixed(0)
+                      : '80'}
+                    % on your next attempt.
                   </p>
                   {viewMarked && (
                     <div className="flex items-center gap-2 text-green-600 mb-3">
