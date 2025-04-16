@@ -35,6 +35,9 @@ interface AIChatProps {
   userId: string;
   testId: string;
   questionId: string;
+  originalQuestion?: string; // The original question text
+  studentAnswer?: string; // The student's answer (A, B, C, D)
+  isCorrect?: boolean; // Whether the student's answer was correct
 }
 
 // Simple function to estimate tokens (approximately 4 characters per token)
@@ -46,6 +49,9 @@ export const AIChat: React.FC<AIChatProps> = ({
   userId,
   testId,
   questionId,
+  originalQuestion,
+  studentAnswer,
+  isCorrect,
 }) => {
   const [userMessage, setUserMessage] = useState<string>('');
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
@@ -273,7 +279,10 @@ export const AIChat: React.FC<AIChatProps> = ({
           test_id: testId,
           question_id: questionId,
           user_message: messageToSend,
-          max_tokens: MAX_TOKEN_LENGTH, // Add token limit
+          max_tokens: MAX_TOKEN_LENGTH,
+          original_question: originalQuestion,
+          student_answer: studentAnswer,
+          is_correct: isCorrect,
         }),
       });
 
@@ -392,7 +401,10 @@ export const AIChat: React.FC<AIChatProps> = ({
           test_id: testId,
           question_id: questionId,
           user_message: messageToSend,
-          max_tokens: MAX_TOKEN_LENGTH, // Add token limit
+          max_tokens: MAX_TOKEN_LENGTH,
+          original_question: originalQuestion,
+          student_answer: studentAnswer,
+          is_correct: isCorrect,
         }),
       });
 
