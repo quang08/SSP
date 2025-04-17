@@ -98,6 +98,7 @@ export interface QuizQuestion {
   reference_part?: string;
   student_part?: string;
   judgment?: number;
+  image_data?: string | null;
 }
 
 export interface QuizResults {

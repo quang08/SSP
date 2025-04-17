@@ -298,6 +298,7 @@ interface StandardTestSubmissionPayload {
     confidence_level?: number;
     topic_id?: string;
     topic_name?: string;
+    image_data?: string | null;
   }>;
   section_title: string;
   chapter_title: string;
@@ -324,6 +325,9 @@ const QuizPage: React.FC = () => {
   const [shortAnswers, setShortAnswers] = useState<{ [key: string]: string }>(
     {}
   );
+  const [shortAnswerImages, setShortAnswerImages] = useState<{
+    [key: string]: string | null;
+  }>({});
   const [confidenceLevels, setConfidenceLevels] = useState<{
     [key: string]: number;
   }>({});
@@ -435,9 +439,33 @@ const QuizPage: React.FC = () => {
       ...prev,
       [questionId]: answer,
     }));
-
-    // Set default confidence level if not already set
+    // Clear image if text is entered
+    if (answer.trim() !== '' && shortAnswerImages[questionId]) {
+      setShortAnswerImages((prev) => ({ ...prev, [questionId]: null }));
+    }
+    // Set default confidence level if not already set and text is entered
     if (!confidenceLevels[questionId] && answer.trim() !== '') {
+      setConfidenceLevels((prev) => ({
+        ...prev,
+        [questionId]: 0.6, // Default neutral confidence
+      }));
+    }
+  };
+
+  const handleImageChange = (
+    questionId: string,
+    imageDataUri: string | null
+  ): void => {
+    setShortAnswerImages((prev) => ({
+      ...prev,
+      [questionId]: imageDataUri,
+    }));
+    // Clear text if image is uploaded
+    if (imageDataUri && shortAnswers[questionId]) {
+      setShortAnswers((prev) => ({ ...prev, [questionId]: '' }));
+    }
+    // Set default confidence if image is uploaded and confidence not set
+    if (imageDataUri && !confidenceLevels[questionId]) {
       setConfidenceLevels((prev) => ({
         ...prev,
         [questionId]: 0.6, // Default neutral confidence
@@ -531,26 +559,34 @@ const QuizPage: React.FC = () => {
       });
 
       // Format short answer responses (as QuizQuestion)
-      const shortAnswerResponses: QuizQuestion[] = Object.entries(
-        shortAnswers
-      ).map(([questionId, answer]) => {
-        const index = parseInt(questionId.replace('sa_', ''));
-        const question = processedQuestions.shortAnswer[index];
-        return {
-          question_id: questionId,
-          question: question.question,
-          user_answer_text: answer,
-          user_answer: answer, // Keep both for potential use
-          correct_answer: question.ideal_answer,
-          ideal_answer: question.ideal_answer, // Ensure ideal_answer is present
-          is_correct: false,
-          notes: notes[questionId] || '',
-          question_type: 'short_answer',
-          confidence_level: confidenceLevels[questionId] || 0.5,
-          topic_id: sectionTitle,
-          topic_name: sectionTitle || 'General',
-        };
-      });
+      const shortAnswerResponses: QuizQuestion[] =
+        processedQuestions.shortAnswer
+          .map((saQuestion, index) => {
+            const questionId = saQuestion.question_id;
+            const textAnswer = shortAnswers[questionId] || '';
+            const imageData = shortAnswerImages[questionId] || null;
+
+            // Only include if there is text OR an image
+            if (textAnswer.trim() !== '' || imageData) {
+              return {
+                question_id: questionId,
+                question: saQuestion.question,
+                user_answer_text: textAnswer, // Text answer
+                user_answer: textAnswer, // Keep both for potential use
+                image_data: imageData, // Include image data
+                correct_answer: saQuestion.ideal_answer,
+                ideal_answer: saQuestion.ideal_answer, // Ensure ideal_answer is present
+                is_correct: false, // Backend will evaluate
+                notes: notes[questionId] || '',
+                question_type: 'short_answer',
+                confidence_level: confidenceLevels[questionId] || 0.5,
+                topic_id: sectionTitle, // Use section title as topic ID
+                topic_name: sectionTitle || 'General', // Use section title as topic name
+              };
+            }
+            return null; // Return null if no answer
+          })
+          .filter((response) => response !== null) as QuizQuestion[]; // Filter out nulls
 
       // Combine all answers (now typed as QuizQuestion[])
       const formattedAnswers: QuizQuestion[] = [
@@ -622,10 +658,13 @@ const QuizPage: React.FC = () => {
             // Map to TestSubmissionRequest['answers'] structure
             question_id: ans.question_id,
             // Send user_answer for MC, user_answer_text for SA if needed by backend
+            // MODIFIED: Add placeholder for image-only short answers
             user_answer:
               ans.question_type === 'multiple_choice'
                 ? ans.user_answer
-                : ans.user_answer_text,
+                : ans.image_data && !ans.user_answer_text
+                  ? '[Image Submitted]' // Placeholder for image only
+                  : ans.user_answer_text, // Use text if available
             user_answer_text:
               ans.question_type === 'short_answer'
                 ? ans.user_answer_text
@@ -635,6 +674,7 @@ const QuizPage: React.FC = () => {
             confidence_level: ans.confidence_level,
             topic_id: ans.topic_id,
             topic_name: ans.topic_name,
+            image_data: ans.image_data,
           })),
           section_title: sectionTitle,
           chapter_title: chapterTitle,
@@ -748,7 +788,21 @@ const QuizPage: React.FC = () => {
   const totalQuestions = totalMultipleChoice + totalShortAnswer;
 
   const answeredMultipleChoice = Object.keys(selectedAnswers).length;
-  const answeredShortAnswer = Object.keys(shortAnswers).length;
+  const answeredShortAnswer = processedQuestions.shortAnswer.reduce(
+    (count, saQuestion) => {
+      const questionId = saQuestion.question_id;
+      const hasText =
+        shortAnswers[questionId] && shortAnswers[questionId].trim() !== '';
+      const hasImage =
+        shortAnswerImages[questionId] !== null &&
+        shortAnswerImages[questionId] !== undefined;
+      if (hasText || hasImage) {
+        return count + 1;
+      }
+      return count;
+    },
+    0
+  );
   const answeredQuestions = answeredMultipleChoice + answeredShortAnswer;
 
   const progressPercentage =
@@ -924,6 +978,8 @@ const QuizPage: React.FC = () => {
                         testId={testId}
                         confidence={confidenceLevels[`sa_${index}`] || 0.5}
                         onUpdateConfidence={handleUpdateConfidence}
+                        imageDataUri={shortAnswerImages[`sa_${index}`] || null}
+                        onImageChange={handleImageChange}
                       />
                     )
                   )}

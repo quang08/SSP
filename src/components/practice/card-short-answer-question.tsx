@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { BookOpen, Pencil } from 'lucide-react';
+import { BookOpen, Pencil, ImagePlus, X } from 'lucide-react';
 import { HintSection } from './HintSection';
 import { Textarea } from '@/components/ui/textarea';
+import { Button } from '@/components/ui/button';
 import { MathJax } from 'better-react-mathjax';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
@@ -24,6 +25,8 @@ interface ShortAnswerQuestionProps {
   testId: string;
   confidence?: number;
   onUpdateConfidence?: (questionId: string, confidenceLevel: number) => void;
+  imageDataUri: string | null;
+  onImageChange: (questionId: string, imageDataUri: string | null) => void;
 }
 
 // Helper function to render with KaTeX
@@ -174,12 +177,45 @@ const ShortAnswerQuestionCard: React.FC<ShortAnswerQuestionProps> = ({
   testId,
   confidence = 0.6,
   onUpdateConfidence,
+  imageDataUri,
+  onImageChange,
 }) => {
   const [showHint, setShowHint] = useState(false);
   const [showNoteInput, setShowNoteInput] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const handleAnswerChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     onAnswerChange(question.question_id, e.target.value);
+  };
+
+  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const result = reader.result as string;
+        onImageChange(question.question_id, result);
+      };
+      reader.onerror = (error) => {
+        console.error('Error reading image file:', error);
+        onImageChange(question.question_id, null);
+      };
+      reader.readAsDataURL(file);
+    }
+    if (e.target) {
+      e.target.value = '';
+    }
+  };
+
+  const handleImageUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleClearImage = () => {
+    onImageChange(question.question_id, null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   return (
@@ -267,27 +303,68 @@ const ShortAnswerQuestionCard: React.FC<ShortAnswerQuestionProps> = ({
             </h4>
             <Textarea
               className="w-full p-4 text-lg rounded-lg border border-[var(--color-gray-200)] focus:border-[var(--color-primary)] focus:outline-none min-h-[120px]"
-              placeholder="Type your answer here..."
+              placeholder="Type your answer here or upload an image..."
               value={answerText || ''}
               onChange={handleAnswerChange}
+              disabled={!!imageDataUri}
               onBlur={(e) => {
-                // Ensure the answer is saved even on blur to prevent data loss
-                if (e.target.value && e.target.value.trim() !== '') {
+                if (
+                  !imageDataUri &&
+                  e.target.value &&
+                  e.target.value.trim() !== ''
+                ) {
                   onAnswerChange(question.question_id, e.target.value);
                 }
               }}
             />
+            <div className="mt-4">
+              <input
+                type="file"
+                accept="image/*"
+                ref={fileInputRef}
+                onChange={handleImageFileChange}
+                className="hidden"
+                id={`image-upload-${question.question_id}`}
+              />
+              <Button
+                variant="outline"
+                onClick={handleImageUploadClick}
+                className="gap-2"
+                aria-label="Upload image answer"
+              >
+                <ImagePlus className="h-4 w-4" />
+                Upload Image
+              </Button>
+              {imageDataUri && (
+                <div className="mt-3 relative inline-block">
+                  <img
+                    src={imageDataUri}
+                    alt="Uploaded answer preview"
+                    className="max-h-40 max-w-full rounded border border-gray-300 object-contain"
+                  />
+                  <Button
+                    variant="destructive"
+                    size="icon"
+                    onClick={handleClearImage}
+                    className="absolute top-1 right-1 h-6 w-6 rounded-full opacity-80 hover:opacity-100"
+                    aria-label="Remove image"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Confidence Selector */}
-        {answerText && answerText.trim() !== '' && onUpdateConfidence && (
-          <ConfidenceSelector
-            questionId={question.question_id}
-            confidence={confidence}
-            onUpdateConfidence={onUpdateConfidence}
-          />
-        )}
+        {((answerText && answerText.trim() !== '') || imageDataUri) &&
+          onUpdateConfidence && (
+            <ConfidenceSelector
+              questionId={question.question_id}
+              confidence={confidence}
+              onUpdateConfidence={onUpdateConfidence}
+            />
+          )}
       </div>
     </div>
   );

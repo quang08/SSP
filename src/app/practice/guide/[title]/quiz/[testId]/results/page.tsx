@@ -23,7 +23,7 @@ import {
   BookOpen,
 } from 'lucide-react';
 import { AIChat } from '@/components/practice/AIChat';
-import { QuizQuestion, QuizResults } from '@/interfaces/test';
+import { QuizResults, QuizQuestion, QuestionType } from '@/interfaces/test';
 import { ResultCard } from '@/components/practice/ResultCard';
 import { MathJaxContext } from 'better-react-mathjax';
 import useSWR from 'swr';
@@ -393,7 +393,7 @@ const QuizResultsPage: React.FC = () => {
 
     // --- CORRECTED LOGIC TO GET QUESTIONS ---
     // Prioritize questions from the latest attempt in the attempts array
-    let questions: QuizQuestion[] = [];
+    let questions: QuizResults['questions'] = [];
     if (submissionData.attempts && submissionData.attempts.length > 0) {
       const latestAttempt =
         submissionData.attempts[submissionData.attempts.length - 1];
@@ -751,44 +751,26 @@ const QuizResultsPage: React.FC = () => {
                 )}
 
                 <div className="space-y-6">
-                  {results.questions?.map((question, index) => (
+                  {results.questions?.map((q: QuizQuestion, index) => (
                     <ResultCard
-                      key={question.question_id}
                       questionNumber={index + 1}
-                      isCorrect={question.is_correct === true}
-                      userAnswer={
-                        question.question_type === 'multiple_choice' &&
-                        question.user_answer &&
-                        question.choices
-                          ? `${question.user_answer}. ${question.choices[question.user_answer]}`
-                          : question.user_answer || ''
-                      }
-                      userAnswerText={
-                        question.user_answer_text ||
-                        (question.question_type === 'short_answer'
-                          ? 'No answer provided'
-                          : '')
-                      }
-                      correctAnswer={
-                        question.question_type === 'multiple_choice' &&
-                        question.correct_answer &&
-                        question.choices
-                          ? `${question.correct_answer}. ${question.choices[question.correct_answer]}`
-                          : question.question_type === 'short_answer'
-                            ? question.ideal_answer || ''
-                            : question.correct_answer_text || ''
-                      }
-                      explanation={question.explanation || ''}
-                      userId={results.user_id}
-                      testId={testId}
-                      questionId={question.question_id}
-                      questionType={question.question_type}
-                      question={question.question}
-                      sourcePage={question.source_page}
-                      sourceText={question.source_text}
-                      reference_part={question.reference_part}
-                      feedback={question.feedback}
-                      confidenceLevel={question.confidence_level}
+                      userId={userId ?? ''}
+                      testId={testId ?? ''}
+                      key={q.question_id}
+                      questionId={q.question_id}
+                      questionType={q.question_type as QuestionType}
+                      question={q.question ?? ''}
+                      userAnswer={q.user_answer ?? ''}
+                      userAnswerText={q.user_answer_text ?? undefined}
+                      correctAnswer={q.correct_answer ?? undefined}
+                      isCorrect={q.is_correct ?? false}
+                      explanation={q.explanation ?? ''}
+                      sourcePage={q.source_page ?? undefined}
+                      sourceText={q.source_text ?? undefined}
+                      reference_part={q.reference_part ?? undefined}
+                      feedback={q.feedback ?? undefined}
+                      confidenceLevel={q.confidence_level ?? undefined}
+                      imageData={q.image_data ?? null}
                     />
                   ))}
                 </div>

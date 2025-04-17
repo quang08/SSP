@@ -30,6 +30,7 @@ interface ResultCardProps {
   reference_part?: string;
   feedback?: string;
   confidenceLevel?: number;
+  imageData?: string | null;
 }
 
 // Helper function to render with KaTeX
@@ -198,12 +199,17 @@ export const ResultCard = ({
   reference_part,
   feedback,
   confidenceLevel,
+  imageData,
 }: ResultCardProps) => {
   // Determine which answer to display based on question type
   const displayUserAnswer =
     questionType === 'short_answer'
-      ? userAnswerText || 'No answer provided'
+      ? userAnswerText || (imageData ? '' : 'No answer provided')
       : `${userAnswer}` || 'No answer provided';
+
+  // Flag to check if there's any answer (text or image) for short answer
+  const hasShortAnswerContent =
+    questionType === 'short_answer' && (!!userAnswerText || !!imageData);
 
   return (
     <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mb-6">
@@ -261,6 +267,25 @@ export const ResultCard = ({
                     }`}
                   >
                     {renderTextWithLatex(displayUserAnswer)}
+
+                    {/* Display Image if available for short answer */}
+                    {questionType === 'short_answer' && imageData && (
+                      <div className="mt-3">
+                        <img
+                          src={imageData}
+                          alt="User submitted answer image"
+                          className="max-w-full h-auto rounded-md border border-gray-300"
+                        />
+                      </div>
+                    )}
+
+                    {/* Display 'No answer provided' if neither text nor image exists */}
+                    {questionType === 'short_answer' &&
+                      !hasShortAnswerContent && (
+                        <span className="text-gray-500 italic">
+                          No answer provided
+                        </span>
+                      )}
 
                     {/* Display Confidence Level */}
                     {confidenceLevel !== undefined &&

@@ -105,6 +105,9 @@ const SlidesQuizPage: React.FC = () => {
   const [shortAnswers, setShortAnswers] = useState<{ [key: string]: string }>(
     {}
   );
+  const [shortAnswerImages, setShortAnswerImages] = useState<{
+    [key: string]: string | null;
+  }>({});
 
   useEffect(() => {
     setStartTime(Math.floor(Date.now() / 1000));
@@ -206,9 +209,34 @@ const SlidesQuizPage: React.FC = () => {
       ...prev,
       [questionId]: answer,
     }));
-
-    // Set default confidence level if not already set
+    // Clear image if text is entered
+    if (answer.trim() !== '' && shortAnswerImages[questionId]) {
+      setShortAnswerImages((prev) => ({ ...prev, [questionId]: null }));
+    }
+    // Set default confidence level if not already set and text is entered
     if (!confidenceLevels[questionId] && answer.trim() !== '') {
+      setConfidenceLevels((prev) => ({
+        ...prev,
+        [questionId]: 0.6, // Default neutral confidence
+      }));
+    }
+  };
+
+  // Add handler for image changes
+  const handleImageChange = (
+    questionId: string,
+    imageDataUri: string | null
+  ): void => {
+    setShortAnswerImages((prev) => ({
+      ...prev,
+      [questionId]: imageDataUri,
+    }));
+    // Clear text if image is uploaded
+    if (imageDataUri && shortAnswers[questionId]) {
+      setShortAnswers((prev) => ({ ...prev, [questionId]: '' }));
+    }
+    // Set default confidence if image is uploaded and confidence not set
+    if (imageDataUri && !confidenceLevels[questionId]) {
       setConfidenceLevels((prev) => ({
         ...prev,
         [questionId]: 0.6, // Default neutral confidence
@@ -264,26 +292,34 @@ const SlidesQuizPage: React.FC = () => {
       });
 
       // Format short answer responses (explicitly type as QuizQuestion)
-      const shortAnswerResponses: QuizQuestion[] = Object.entries(
-        shortAnswers
-      ).map(([questionId, answer]) => {
-        const index = parseInt(questionId.replace('sa_', ''));
-        const question = processedQuestions.shortAnswer[index];
-        return {
-          question_id: questionId,
-          question: question?.question || '',
-          user_answer_text: answer,
-          user_answer: answer,
-          correct_answer: question?.ideal_answer,
-          ideal_answer: question?.ideal_answer,
-          is_correct: false,
-          notes: notes[questionId] || '',
-          question_type: 'short_answer',
-          confidence_level: confidenceLevels[questionId] || 0.5,
-          topic_id: sectionTitle,
-          topic_name: sectionTitle || 'General',
-        };
-      });
+      const shortAnswerResponses: QuizQuestion[] =
+        processedQuestions.shortAnswer
+          .map((saQuestion, index) => {
+            const questionId = saQuestion.question_id;
+            const textAnswer = shortAnswers[questionId] || '';
+            const imageData = shortAnswerImages[questionId] || null;
+
+            // Only include if there is text OR an image
+            if (textAnswer.trim() !== '' || imageData) {
+              return {
+                question_id: questionId,
+                question: saQuestion.question || '',
+                user_answer_text: textAnswer,
+                user_answer: textAnswer,
+                image_data: imageData,
+                correct_answer: saQuestion.ideal_answer,
+                ideal_answer: saQuestion.ideal_answer,
+                is_correct: false,
+                notes: notes[questionId] || '',
+                question_type: 'short_answer',
+                confidence_level: confidenceLevels[questionId] || 0.5,
+                topic_id: sectionTitle,
+                topic_name: sectionTitle || 'General',
+              };
+            }
+            return null; // Return null if no answer
+          })
+          .filter((response) => response !== null) as QuizQuestion[]; // Filter out nulls
 
       // Combine all answers
       const formattedAnswers: QuizQuestion[] = [
@@ -461,7 +497,21 @@ const SlidesQuizPage: React.FC = () => {
   const totalQuestions = totalMultipleChoice + totalShortAnswer;
 
   const answeredMultipleChoice = Object.keys(selectedAnswers).length;
-  const answeredShortAnswer = Object.keys(shortAnswers).length;
+  const answeredShortAnswer = processedQuestions.shortAnswer.reduce(
+    (count, saQuestion) => {
+      const questionId = saQuestion.question_id;
+      const hasText =
+        shortAnswers[questionId] && shortAnswers[questionId].trim() !== '';
+      const hasImage =
+        shortAnswerImages[questionId] !== null &&
+        shortAnswerImages[questionId] !== undefined;
+      if (hasText || hasImage) {
+        return count + 1;
+      }
+      return count;
+    },
+    0
+  );
   const answeredQuestions = answeredMultipleChoice + answeredShortAnswer;
 
   const progressPercentage =
@@ -646,6 +696,8 @@ const SlidesQuizPage: React.FC = () => {
                     testId={testId}
                     confidence={confidenceLevels[`sa_${index}`] || 0.5}
                     onUpdateConfidence={handleUpdateConfidence}
+                    imageDataUri={shortAnswerImages[`sa_${index}`] || null}
+                    onImageChange={handleImageChange}
                   />
                 ))}
               </div>
