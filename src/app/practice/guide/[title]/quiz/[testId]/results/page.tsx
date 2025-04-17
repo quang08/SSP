@@ -567,7 +567,7 @@ const QuizResultsPage: React.FC = () => {
                     <CardContent className="p-6">
                       <div className="flex items-center justify-between mb-4">
                         <h3 className="text-lg font-semibold text-gray-700">
-                          Score
+                          Correct Answers
                         </h3>
                         <Trophy className="h-6 w-6 text-[var(--color-primary)]" />
                       </div>
@@ -575,7 +575,9 @@ const QuizResultsPage: React.FC = () => {
                         <span className="text-4xl font-bold text-gray-900">
                           {results.score}
                         </span>
-                        <span className="ml-2 text-gray-600">points</span>
+                        <span className="ml-1 text-2xl text-gray-600">
+                          / {results.questions?.length ?? 0}
+                        </span>
                       </div>
                     </CardContent>
                   </Card>
@@ -583,14 +585,7 @@ const QuizResultsPage: React.FC = () => {
                   <Card
                     className={cn(
                       'bg-white shadow-lg hover:shadow-xl transition-all duration-300',
-                      'border-l-4',
-                      results.accuracy >=
-                        (masteryThresholds?.mastery_threshold || 70)
-                        ? 'border-l-green-500'
-                        : results.accuracy >=
-                            (masteryThresholds?.pass_threshold || 50)
-                          ? 'border-l-yellow-500'
-                          : 'border-l-red-500'
+                      'border-l-4 border-l-yellow-500'
                     )}
                   >
                     <CardContent className="p-6">
