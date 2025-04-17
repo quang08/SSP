@@ -8,7 +8,7 @@ import {
   LightbulbIcon,
   TrendingUp,
 } from 'lucide-react';
-import { AIChat } from './AIChat';
+import { AIChat } from '@/components/practice/AIChat';
 import { MathJax } from 'better-react-mathjax';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
@@ -358,7 +358,14 @@ export const ResultCard = ({
             </div>
 
             <div className="mt-5 pt-4 border-t border-gray-200">
-              <AIChat userId={userId} testId={testId} questionId={questionId} />
+              <AIChat
+                userId={userId}
+                testId={testId}
+                questionId={questionId}
+                originalQuestion={question}
+                studentAnswer={userAnswer}
+                isCorrect={isCorrect}
+              />
             </div>
           </div>
         </div>

@@ -600,6 +600,7 @@ export const AIChat: React.FC<AIChatProps> = ({
                         <strong>AI:</strong>{' '}
                         <div className="text-lg text-[var(--color-text-secondary)]">
                           <p>{loadingMessage}</p>
+                          <p className="text-sm italic">Be Patient Please :)</p>
                           {(generatingResponse || isPolling) && (
                             <div className="mt-2 flex items-center">
                               <div className="animate-pulse mr-2 h-2 w-2 rounded-full bg-[var(--color-primary)]"></div>
