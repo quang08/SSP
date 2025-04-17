@@ -776,12 +776,7 @@ const SlidesQuizResultsPage: React.FC = () => {
                           ? `${question.user_answer}. ${question.choices?.[question.user_answer] ?? ''}`
                           : question.user_answer || ''
                       }
-                      userAnswerText={
-                        question.user_answer_text ||
-                        (question.question_type === 'short_answer'
-                          ? 'No answer provided'
-                          : '')
-                      }
+                      userAnswerText={question.user_answer_text || undefined}
                       correctAnswer={
                         question.question_type === 'multiple_choice' &&
                         question.correct_answer &&
