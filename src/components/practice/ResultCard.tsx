@@ -201,15 +201,22 @@ export const ResultCard = ({
   confidenceLevel,
   imageData,
 }: ResultCardProps) => {
-  // Determine which answer to display based on question type
-  const displayUserAnswer =
-    questionType === 'short_answer'
-      ? userAnswerText || (imageData ? '' : 'No answer provided')
-      : `${userAnswer}` || 'No answer provided';
+  // Determine which answer text field to use (prioritize userAnswerText)
+  const shortAnswerText =
+    userAnswerText || (questionType === 'short_answer' ? userAnswer : '');
 
   // Flag to check if there's any answer (text or image) for short answer
   const hasShortAnswerContent =
-    questionType === 'short_answer' && (!!userAnswerText || !!imageData);
+    questionType === 'short_answer' && (!!shortAnswerText || !!imageData);
+
+  // Determine which answer to display based on question type, prioritizing userAnswerText
+  const displayUserAnswer =
+    userAnswerText || // Prioritize userAnswerText if available
+    (questionType === 'short_answer'
+      ? imageData
+        ? '' // If image exists, display nothing here (image shown separately)
+        : userAnswer || 'No answer provided' // Use userAnswer for short answer if no image, fallback
+      : `${userAnswer}` || 'No answer provided'); // Fallback for multiple choice or if userAnswer is empty
 
   return (
     <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mb-6">

@@ -24,6 +24,7 @@ import {
   Clock,
   Lock,
   Circle,
+  ExternalLink,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { motion } from 'framer-motion';
@@ -85,6 +86,7 @@ interface StudyGuideData {
   title: string;
   chapters: Chapter[];
   study_guide_id?: string;
+  gdrive_folder_url?: string;
 }
 
 interface TestMap {
@@ -710,7 +712,7 @@ const StudyGuidePage: React.FC = () => {
       </span>
     );
   };
-  
+
   return (
     <MathJaxContext config={mathJaxConfig}>
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
@@ -822,7 +824,7 @@ const StudyGuidePage: React.FC = () => {
                           value={`chapter-${chapterIndex}`}
                           className="border-2 border-gray-300 rounded-xl shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden data-[state=open]:shadow-md"
                         >
-                          <AccordionTrigger className="px-6 py-4 hover:no-underline transition-colors">
+                          <AccordionTrigger className="px-6 py-4 hover:no-underline transition-colors flex justify-between items-center w-full">
                             <div className="flex items-center gap-3">
                               <div className="p-2 rounded-lg bg-[var(--color-primary)]/10">
                                 <BarChart className="h-5 w-5 text-[var(--color-primary)]" />
@@ -1146,6 +1148,30 @@ const StudyGuidePage: React.FC = () => {
                     Guide Info
                   </h3>
                   <div className="space-y-4">
+                    {/* Conditionally render Google Drive Link based on data */}
+                    {processedGuide?.gdrive_folder_url && (
+                      <div>
+                        <p className="text-sm text-gray-600 mb-1">
+                          Course Materials
+                        </p>
+                        <Link
+                          href={processedGuide.gdrive_folder_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full text-sm flex items-center justify-center gap-2 border-blue-500 text-blue-600 hover:bg-blue-50"
+                            title="View associated course materials in Google Drive"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                            View Materials in Drive
+                          </Button>
+                        </Link>
+                      </div>
+                    )}
+
                     <div>
                       <p className="text-sm text-gray-600 mb-1">Chapters</p>
                       <p className="font-medium">
