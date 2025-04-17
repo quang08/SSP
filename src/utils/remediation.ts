@@ -71,7 +71,7 @@ export const markRemediationViewed = async (
     // Display a message informing users about the next steps
     toast.success('Remediation marked as viewed', {
       description:
-        'Remember: You must retry the test and achieve at least 80% accuracy to proceed to the next test.',
+        'Remember: You must retry the test and achieve at least 75% accuracy to proceed to the next test.',
       duration: 5000,
     });
 
@@ -128,7 +128,7 @@ export const markReviewViewed = async (
     // Display a message informing users about the next steps
     toast.success('Review materials marked as viewed', {
       description:
-        "According to Bloom's Mastery Theory, you must now retry the test and achieve at least 80% accuracy to proceed to the next test.",
+        "According to Bloom's Mastery Theory, you must now retry the test and achieve at least 75% accuracy to proceed to the next test.",
       duration: 5000,
     });
 
