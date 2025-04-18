@@ -791,18 +791,21 @@ export default function DashboardPage() {
                           >
                             <CardContent className="p-6 relative">
                               <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-yellow-200/30 to-orange-300/30 rounded-bl-full"></div>
-                              <Target className="h-8 w-8 text-yellow-500 mb-4" />
+                              <Percent className="h-8 w-8 text-yellow-500 mb-4" />
                               <CardTitle className="text-lg font-semibold text-gray-700 mb-2">
-                                Average Score
+                                Average Accuracy
                               </CardTitle>
                               <div className="flex items-baseline">
-                                {testAnalytics?.average_score ? (
+                                {testAnalytics?.average_accuracy !==
+                                undefined ? (
                                   <>
                                     <span className="text-4xl font-bold text-gray-900">
-                                      {testAnalytics.average_score.toFixed(2)}
+                                      {testAnalytics.average_accuracy.toFixed(
+                                        0
+                                      )}
                                     </span>
                                     <span className="ml-2 text-gray-600">
-                                      points
+                                      %
                                     </span>
                                   </>
                                 ) : (
