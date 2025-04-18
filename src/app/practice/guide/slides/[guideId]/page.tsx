@@ -323,7 +323,7 @@ const SlidesGuidePage: React.FC = () => {
       } else {
         // Fallback if submission ID isn't found (shouldn't happen if backend provides it)
         console.warn(
-          `Submission ID not found for completed test: ${testId}. Navigating without specific ID.`
+          `Submission ID not found in state for completed test: ${testId}. Navigating without specific ID.`
         );
         router.push(
           `/practice/guide/slides/${encodeURIComponent(guideId)}/quiz/${testId}/results`

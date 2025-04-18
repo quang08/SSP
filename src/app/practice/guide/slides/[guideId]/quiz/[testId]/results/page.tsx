@@ -219,14 +219,6 @@ const SlidesQuizResultsPage: React.FC = () => {
         // Get submission ID from URL or directly from submissionId variable
         const subId = submissionId || searchParams.get('submission') || '';
 
-        // Log the endpoint URL for debugging
-        const endpointUrl = ENDPOINTS.quizResultsWithData(
-          testId,
-          authUserId,
-          subId
-        );
-        console.log('Fetching quiz results from:', endpointUrl);
-
         if (!subId) {
           // If no submission ID is available, fall back to the old endpoint
           console.log(
@@ -237,17 +229,21 @@ const SlidesQuizResultsPage: React.FC = () => {
           );
 
           if (!response.ok) {
-            throw new Error('Failed to fetch results');
+            throw new Error('Failed to fetch results via fallback');
           }
 
           const data: QuizResults = await response.json();
           console.log('Fallback endpoint response:', data);
 
-          // Check if we got a submission ID from the fallback endpoint
-          const fallbackSubmissionId = data.submission_id || '';
-          console.log('Fallback submission ID:', fallbackSubmissionId);
+          // Check for common ID fields (submission_id or result_id)
+          const fallbackSubmissionId =
+            data.submission_id || data.result_id || '';
+          console.log(
+            'Fallback submission ID extracted:',
+            fallbackSubmissionId
+          );
 
-          // Set the actualSubmissionId from the data if available
+          // Set the actualSubmissionId state from the fallback data
           setActualSubmissionId(fallbackSubmissionId);
 
           setResults(data);
@@ -265,21 +261,33 @@ const SlidesQuizResultsPage: React.FC = () => {
         }
 
         // Use the new consolidated endpoint
+        const endpointUrl = ENDPOINTS.quizResultsWithData(
+          testId,
+          authUserId,
+          subId
+        );
+        console.log('Fetching quiz results from:', endpointUrl);
         const response = await fetchWithAuth(endpointUrl);
 
         if (!response.ok) {
-          throw new Error('Failed to fetch results');
+          throw new Error('Failed to fetch consolidated results');
         }
 
         const data = await response.json();
         console.log('Received consolidated response:', data);
 
-        // Extract submission ID from the response data
+        // Extract submission ID from the response data (prioritize subId from URL)
         const responseSubmissionId =
-          subId || data.submission?.submission_id || '';
-        console.log('Response submission ID:', responseSubmissionId);
+          subId ||
+          data.submission?.submission_id ||
+          data.submission?.result_id ||
+          '';
+        console.log(
+          'Consolidated response submission ID:',
+          responseSubmissionId
+        );
 
-        // Store the submission ID
+        // Store the submission ID in state
         setActualSubmissionId(responseSubmissionId);
 
         // Prepare the result data, ensuring questions are available
