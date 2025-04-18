@@ -428,9 +428,9 @@ const StudyGuidePage: React.FC = () => {
       statusText = 'Review Recommended';
       bgColorClass = 'bg-yellow-100';
       textColorClass = 'text-yellow-700';
-    } else if (section.attempts_used && section.attempts_used > 0) {
+    } else if (section.completed) {
       statusIcon = <Clock className="h-4 w-4 text-blue-500" />;
-      statusText = 'In Progress';
+      statusText = 'Attempted';
       bgColorClass = 'bg-blue-100';
       textColorClass = 'text-blue-700';
     } else if (!section.is_unlocked) {
