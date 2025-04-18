@@ -376,7 +376,7 @@ export default function AdaptiveTestPage() {
       const result: AdaptiveTestResponse = await response.json();
 
       if (!response.ok) {
-        // Improved error handling
+        // Handle API errors (e.g., 500, 404)
         console.error('API Error:', result.message || response.statusText);
         throw new Error(
           result.message || `Request failed with status ${response.status}`
@@ -384,14 +384,43 @@ export default function AdaptiveTestPage() {
       }
 
       if (!result.practice_test) {
-        // Handle case where backend confirms generation failed (e.g., eligibility)
-        toast.info(result.message || 'Could not generate adaptive test.');
-        throw new Error(
-          result.message ||
-            'Failed to generate adaptive test (no test data returned)'
-        );
+        // Handle logical failure (generation didn't produce a test)
+        let toastMessage =
+          result.message || 'Could not generate adaptive test.'; // Default message
+
+        // Check for specific failure reasons based on the message from the backend
+        // (This is heuristic, a dedicated reason code from backend would be better)
+        const messageLower = toastMessage.toLowerCase();
+        if (
+          messageLower.includes('suitable questions') ||
+          messageLower.includes('no candidate questions') ||
+          messageLower.includes('recent performance')
+        ) {
+          toastMessage =
+            'No challenging questions found based on your recent performance. Try practicing more topics or reviewing previous quizzes.';
+        } else if (
+          messageLower.includes('eligible') ||
+          messageLower.includes('prerequisite')
+        ) {
+          toastMessage = result.message; // Use backend eligibility message directly
+        } else if (
+          messageLower.includes('no submissions') ||
+          messageLower.includes('no data')
+        ) {
+          toastMessage =
+            'Not enough quiz data found for this chapter to generate an adaptive test.';
+        }
+
+        toast.info(toastMessage); // Use toast.info or toast.warning
+        console.warn(
+          'Adaptive test generation failed logically:',
+          toastMessage
+        ); // Log for debugging
+        // Exit the function gracefully - no need to throw an error for logical failure
+        return;
       }
 
+      // --- Test generation successful ---
       toast.success(
         `Adaptive test generated for ${chapterTitle}! Starting now...`
       );
