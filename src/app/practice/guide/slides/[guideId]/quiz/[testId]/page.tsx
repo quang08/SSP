@@ -637,9 +637,22 @@ const SlidesQuizPage: React.FC = () => {
           icon: <Loader2 className="h-4 w-4 animate-spin" />,
         });
 
-        router.push(
-          `/practice/guide/slides/${encodeURIComponent(guideId)}/quiz/${testId}/results?submission=${result.submission_id}`
-        );
+        // Ensure result.submission_id exists before navigating
+        const submissionIdForResultPage = result?.submission_id;
+        if (!submissionIdForResultPage) {
+          console.error(
+            'Submission ID missing in response from /practice/submit',
+            result
+          );
+          toast.error('Failed to get submission ID. Cannot load results.');
+          setSubmitting(false); // Re-enable submit button on error
+          return; // Stop execution if ID is missing
+        }
+
+        // Construct the results page URL WITH the submission query parameter
+        const resultsUrl = `/practice/guide/slides/${encodeURIComponent(guideId)}/quiz/${testId}/results?submission=${submissionIdForResultPage}`;
+        console.log('Navigating to results page:', resultsUrl); // Log the URL
+        router.push(resultsUrl);
       }
     } catch (err: unknown) {
       console.error('Error in handleSubmit (slides):', err);
