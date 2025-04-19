@@ -9,6 +9,11 @@ import { Provider } from 'jotai';
 import { Prompt } from 'next/font/google';
 import { Toaster } from 'sonner';
 import { SessionIndicatorWrapper } from '@/components/ui/session-indicator-wrapper';
+import { Analytics } from '@vercel/analytics/react';
+import Script from 'next/script';
+
+const GA_MEASUREMENT_ID =
+  process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID || 'G-Z4DXLBMFRZ';
 
 export const metadata: Metadata = {
   title: 'Smart Study+',
@@ -33,12 +38,34 @@ const RootLayout = ({
   children: React.ReactNode;
 }>) => (
   <html lang="en" className={prompt.className}>
+    <head>{/* Add any other head elements here */}</head>
     <body>
+      {/* <!-- Google Analytics Scripts --> */}
+      <Script
+        strategy="afterInteractive"
+        src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}
+      />
+      <Script
+        id="google-analytics"
+        strategy="afterInteractive"
+        dangerouslySetInnerHTML={{
+          __html: `
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', '${GA_MEASUREMENT_ID}', {
+              page_path: window.location.pathname,
+            });
+          `,
+        }}
+      />
+      {/* --- End Google Analytics Scripts --- */}
       <Provider>
         {children}
         <SessionIndicatorWrapper />
       </Provider>
       <Toaster richColors position="top-right" closeButton />
+      <Analytics />
     </body>
   </html>
 );
