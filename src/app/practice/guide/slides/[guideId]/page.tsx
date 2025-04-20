@@ -382,6 +382,11 @@ const SlidesGuidePage: React.FC = () => {
     const hasPrerequisites = prerequisites.length > 0;
     const topicStatus = topicMasteryStatus[topic.title];
 
+    // Get the test associated with this topic
+    const topicTests = getTestsByTopic(topic.title);
+    const testId = topicTests.length > 0 ? topicTests[0].practice_test_id : '';
+    const isCompleted = testId ? completedTests.has(testId) : false;
+
     // Determine topic status icon and styling
     let statusIcon = null;
     let statusText = '';
@@ -399,9 +404,9 @@ const SlidesGuidePage: React.FC = () => {
         statusText = 'Review Recommended';
         bgColorClass = 'bg-yellow-100';
         textColorClass = 'text-yellow-700';
-      } else if (topicStatus.attempts_used && topicStatus.attempts_used > 0) {
+      } else if (isCompleted) {
         statusIcon = <Clock className="h-4 w-4 text-blue-500" />;
-        statusText = 'In Progress';
+        statusText = 'Attempted';
         bgColorClass = 'bg-blue-100';
         textColorClass = 'text-blue-700';
       } else if (!topicStatus.isUnlocked) {
@@ -415,6 +420,12 @@ const SlidesGuidePage: React.FC = () => {
         bgColorClass = 'bg-gray-100';
         textColorClass = 'text-gray-700';
       }
+    } else {
+      // Default status if topicStatus is not yet available
+      statusIcon = <Circle className="h-4 w-4 text-gray-400" />;
+      statusText = 'Loading...';
+      bgColorClass = 'bg-gray-100';
+      textColorClass = 'text-gray-700';
     }
 
     return (
@@ -422,19 +433,17 @@ const SlidesGuidePage: React.FC = () => {
         <div className="flex items-start justify-between">
           <h3 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
             {topic.title}
-            {topicStatus && (
-              <span
-                className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full ${bgColorClass} ${textColorClass}`}
-              >
-                {statusIcon}
-                {statusText}
-                {topicStatus.mastery_percentage !== undefined && (
-                  <span className="ml-1">
-                    ({Math.round(topicStatus.mastery_percentage)}%)
-                  </span>
-                )}
-              </span>
-            )}
+            <span
+              className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full ${bgColorClass} ${textColorClass}`}
+            >
+              {statusIcon}
+              {statusText}
+              {topicStatus?.mastery_percentage !== undefined && (
+                <span className="ml-1">
+                  ({Math.round(topicStatus.mastery_percentage)}%)
+                </span>
+              )}
+            </span>
           </h3>
         </div>
         {topic.description && (
