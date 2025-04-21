@@ -805,6 +805,7 @@ const SlidesQuizResultsPage: React.FC = () => {
                       reference_part={question.reference_part}
                       feedback={question.feedback}
                       confidenceLevel={question.confidence_level}
+                      imageData={question.image_data ?? null}
                     />
                   ))}
                 </div>

@@ -240,6 +240,7 @@ interface StandardTestSubmissionPayload {
     confidence_level?: number;
     topic_id?: string;
     topic_name?: string;
+    image_data?: string | null;
   }>;
   section_title: string;
   chapter_title: string;
@@ -559,6 +560,7 @@ const SlidesQuizPage: React.FC = () => {
             confidence_level: ans.confidence_level,
             topic_id: ans.topic_id,
             topic_name: ans.topic_name,
+            image_data: ans.image_data,
           })),
           section_title: sectionTitle,
           chapter_title: chapterTitle,
