@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { ChevronDown, RefreshCw } from 'lucide-react';
 import { fetchWithAuth } from '@/app/auth/fetchWithAuth';
-import { MathJaxContext, MathJax } from 'better-react-mathjax';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
@@ -18,7 +17,21 @@ interface HintSectionProps {
   onToggle: () => void;
 }
 
-// Helper function to render with KaTeX
+const cleanLatexFields = (text: string): string => {
+  return text
+    .replace(/[\\x00-\\x1F\\x7F]/g, '') // Strip control characters
+    .replace(/\\\\/g, '\\\\'); // Normalize escaped backslashes
+};
+
+const isValidLatex = (text: string): boolean => {
+  try {
+    katex.renderToString(text, { throwOnError: true });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 const renderWithKatex = (
   text: string,
   displayMode: boolean = false
@@ -36,119 +49,105 @@ const renderWithKatex = (
   }
 };
 
-// Helper function to determine if text is simple LaTeX
 const isSimpleLatex = (text: string): boolean => {
   // Check if text contains only basic LaTeX commands and symbols
-  const simpleLatexPattern = /^[a-zA-Z0-9\s\+\-\*\/\^\{\}\(\)\[\]\_\$\\]+$/;
+  const simpleLatexPattern =
+    /^[a-zA-Z0-9\\s\\+\\-\\*\\/\\^\\{\\}\\(\\)\\[\\_\\$]]+$/;
   return simpleLatexPattern.test(text);
 };
 
-// Helper function to process text for LaTeX rendering
-const renderTextWithLatex = (text: string) => {
+const stripMathDelimiters = (latex: string): string => {
+  // Order matters: $$ first, then $, then \[, then \(
+  return latex
+    .replace(/^\$\$([\s\S]*)\$\$$/, '$1') // $$...$$
+    .replace(/^\$(.*)\$$/, '$1') // $...$
+    .replace(/^\\\[([\s\S]*)\\\]$/, '$1') // \[...\]
+    .replace(/^\\\((.*)\\\)$/, '$1'); // \(...\)
+};
+
+export const renderTextWithLatex = (text: string) => {
   if (!text) return null;
 
-  // First, unescape all double backslashes
-  let processedText = text.replace(/\\\\/g, '\\');
+  // --- Step 1: Normalize double-escaped characters ---
+  let processedText = text
+    .replace(/\\\\\(/g, '\\(')
+    .replace(/\\\\\)/g, '\\)')
+    .replace(/\\\\\[/g, '\\[')
+    .replace(/\\\\\]/g, '\\]')
+    .replace(/\\\\/g, '\\');
 
-  // Handle special LaTeX commands and symbols
+  // --- Step 2: Normalize some LaTeX commands ---
   processedText = processedText
-    // Handle \mathbb{R} notation
     .replace(/\\mathbb\{([^}]+)\}/g, (_, p1) => `\\mathbb{${p1}}`)
-    // Handle subscripts and superscripts with multiple characters
     .replace(/_{([^}]+)}/g, '_{$1}')
     .replace(/\^{([^}]+)}/g, '^{$1}')
-    // Handle special spacing around operators
     .replace(/\\sum(?![a-zA-Z])/g, '\\sum\\limits')
     .replace(/\\int(?![a-zA-Z])/g, '\\int\\limits')
     .replace(/\\prod(?![a-zA-Z])/g, '\\prod\\limits')
-    // Handle spacing around vertical bars and other delimiters
-    .replace(/\|/g, '\\,|\\,')
-    .replace(/\\mid/g, '\\,|\\,')
-    // Handle matrix transpose
+    .replace(/\\mid/g, '|')
     .replace(/\\T(?![a-zA-Z])/g, '^{\\intercal}')
-    // Handle common statistical notation
     .replace(/\\Var/g, '\\operatorname{Var}')
     .replace(/\\Bias/g, '\\operatorname{Bias}')
     .replace(/\\MSE/g, '\\operatorname{MSE}')
     .replace(/\\EPE/g, '\\operatorname{EPE}')
-    // Handle escaped curly braces
-    .replace(/\\\{/g, '{')
-    .replace(/\\\}/g, '}');
+    .replace(/\\{/g, '{')
+    .replace(/\\}/g, '}');
 
-  // Split text by existing LaTeX delimiters while preserving the delimiters
+  // --- Step 3: Split by math delimiters while preserving them ---
   const parts = processedText.split(
-    /(\$\$[\s\S]*?\$\$|\$[^$\n]*?\$|\\\([^)]*?\\\)|\\\[[\s\S]*?\\\])/g
+    /(\$\$[\s\S]+?\$\$|\$[^\n]+\$|\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\])/g
   );
 
-  // Generate a unique key for each part
+
+  // --- Step 4: Hash function for keys ---
   const hashString = (str: string): string => {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
-      hash = hash & hash; // Convert to 32-bit integer
+      hash = (hash << 5) - hash + str.charCodeAt(i);
+      hash |= 0;
     }
-    return hash.toString(36); // Convert to base-36 for shorter strings
+    return hash.toString(36);
   };
 
+  // --- Step 5: Render each part ---
   return parts.map((part, index) => {
-    // Generate a more unique key using content hash
     const key = `${index}-${hashString(part)}`;
+    const trimmed = part.trim();
 
-    if (
-      part.startsWith('$') ||
-      part.startsWith('\\(') ||
-      part.startsWith('\\[')
-    ) {
-      // Remove the delimiters
-      let latex = part
-        .replace(/^\$\$|\$\$$|^\$|\$$|^\\\(|\\\)$|^\\\[|\\\]$/g, '')
-        .trim();
+    const isLatex = /^(\$\$.*\$\$|\$.*\$|\\\(.*\\\)|\\\[.*\\\])$/.test(trimmed);
 
-      const isDisplay = part.startsWith('$$') || part.startsWith('\\[');
+    if (isLatex) {
+      // Remove only the outermost delimiters
+      let latex = trimmed;
 
-      // Use KaTeX for simple expressions and MathJax for complex ones
-      if (isSimpleLatex(latex)) {
+      if (latex.startsWith('$$') && latex.endsWith('$$')) {
+        latex = latex.slice(2, -2);
+      } else if (latex.startsWith('$') && latex.endsWith('$')) {
+        latex = latex.slice(1, -1);
+      } else if (latex.startsWith('\\(') && latex.endsWith('\\)')) {
+        latex = latex.slice(2, -2);
+      } else if (latex.startsWith('\\[') && latex.endsWith('\\]')) {
+        latex = latex.slice(2, -2);
+      }
+
+      try {
         return (
           <span
             key={key}
             dangerouslySetInnerHTML={{
-              __html: renderWithKatex(latex, isDisplay),
+              __html: katex.renderToString(latex, {
+                displayMode:
+                  trimmed.startsWith('$$') || trimmed.startsWith('\\['),
+                throwOnError: false,
+                trust: true,
+              }),
             }}
           />
         );
+      } catch (e) {
+        console.error('KaTeX render error:', e, '\nLatex:', latex);
+        return <span key={key}>{part}</span>;
       }
-
-      // Wrap the LaTeX in appropriate delimiters for MathJax
-      latex = isDisplay ? `$$${latex}$$` : `$${latex}$`;
-
-      return (
-        <MathJax key={key} inline={!isDisplay} dynamic={true}>
-          {latex}
-        </MathJax>
-      );
-    }
-
-    // Check if the part contains any LaTeX-like content
-    if (part.includes('\\') || /[_^{}]/.test(part)) {
-      // Use KaTeX for simple expressions
-      if (isSimpleLatex(part)) {
-        return (
-          <span
-            key={key}
-            dangerouslySetInnerHTML={{
-              __html: renderWithKatex(part, false),
-            }}
-          />
-        );
-      }
-
-      // Use MathJax for complex expressions
-      return (
-        <MathJax key={key} inline={true} dynamic={true}>
-          {`$${part}$`}
-        </MathJax>
-      );
     }
 
     return <span key={key}>{part}</span>;
@@ -388,11 +387,6 @@ export const HintSection = ({
 
   if (!isVisible) return null;
 
-  const formatMathNotation = (text: string): React.ReactNode | null => {
-    if (!text) return null;
-    return <>{renderTextWithLatex(text)}</>;
-  };
-
   // Update formatHintWithPageCircles to process text before sending to LaTeX rendering
   const formatHintWithPageCircles = (text: string): string => {
     if (!text) return '';
@@ -563,79 +557,75 @@ export const HintSection = ({
   };
 
   return (
-    <MathJaxContext>
-      <div className="ml-10 bg-[var(--color-background-alt)] rounded-lg border border-[var(--color-gray-200)]">
-        <div className="w-full flex items-center justify-between p-6 text-left border-b border-[var(--color-gray-200)]">
+    <div className="ml-10 bg-[var(--color-background-alt)] rounded-lg border border-[var(--color-gray-200)]">
+      <div className="w-full flex items-center justify-between p-6 text-left border-b border-[var(--color-gray-200)]">
+        <button
+          onClick={onToggle}
+          className="flex-1 flex items-center justify-between"
+        >
+          <h4 className="text-xl font-medium text-[var(--color-text)]">Hint</h4>
+          <ChevronDown
+            className={`w-5 h-5 text-[var(--color-text-secondary)] transform transition-transform ${
+              isVisible ? 'rotate-180' : ''
+            }`}
+          />
+        </button>
+        {hint && (
           <button
-            onClick={onToggle}
-            className="flex-1 flex items-center justify-between"
+            onClick={handleManualRefresh}
+            className="ml-4 p-2 rounded-full hover:bg-gray-100 transition-colors"
+            title="Sometimes the hint might need a reload! Click to refresh"
+            aria-label="Refresh hint"
+            disabled={loadingHint || isRefreshing}
           >
-            <h4 className="text-xl font-medium text-[var(--color-text)]">
-              Hint
-            </h4>
-            <ChevronDown
-              className={`w-5 h-5 text-[var(--color-text-secondary)] transform transition-transform ${
-                isVisible ? 'rotate-180' : ''
-              }`}
+            <RefreshCw
+              className={`w-4 h-4 text-[var(--color-text-secondary)] ${isRefreshing ? 'animate-spin' : ''}`}
             />
           </button>
-          {hint && (
-            <button
-              onClick={handleManualRefresh}
-              className="ml-4 p-2 rounded-full hover:bg-gray-100 transition-colors"
-              title="Sometimes the hint might need a reload! Click to refresh"
-              aria-label="Refresh hint"
-              disabled={loadingHint || isRefreshing}
-            >
-              <RefreshCw
-                className={`w-4 h-4 text-[var(--color-text-secondary)] ${isRefreshing ? 'animate-spin' : ''}`}
-              />
-            </button>
-          )}
-        </div>
-        <div className="p-6">
-          {loadingHint || isRefreshing ? (
-            <div className="text-lg text-[var(--color-text-secondary)]">
-              <p>{loadingMessage}</p>
-              {(generatingNewHint || isRefreshing) && (
-                <div className="mt-4">
-                  <div className="flex items-center justify-center space-x-2 mb-3">
-                    <div
-                      className="w-2 h-2 bg-[var(--color-primary)] rounded-full animate-pulse"
-                      style={{ animationDelay: '0ms' }}
-                    ></div>
-                    <div
-                      className="w-2 h-2 bg-[var(--color-primary)] rounded-full animate-pulse"
-                      style={{ animationDelay: '300ms' }}
-                    ></div>
-                    <div
-                      className="w-2 h-2 bg-[var(--color-primary)] rounded-full animate-pulse"
-                      style={{ animationDelay: '600ms' }}
-                    ></div>
-                  </div>
-                  <div className="w-full bg-[var(--color-background)] rounded-full h-1.5">
-                    <div className="bg-[var(--color-primary)] h-1.5 rounded-full animate-[progressPulse_3s_ease-in-out_infinite]"></div>
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : error ? (
-            <div className="text-lg text-[var(--color-text-secondary)]">
-              <p className="text-red-500">{error}</p>
-              <button
-                onClick={handleRetry}
-                className="mt-4 px-4 py-2 bg-[var(--color-primary)] text-white rounded hover:bg-[var(--color-primary-dark)] transition-colors"
-              >
-                Try Again
-              </button>
-            </div>
-          ) : (
-            <div className="text-lg text-[var(--color-text-secondary)]">
-              {hint ? renderHintWithMathAndPageCircles(hint) : null}
-            </div>
-          )}
-        </div>
+        )}
       </div>
-    </MathJaxContext>
+      <div className="p-6">
+        {loadingHint || isRefreshing ? (
+          <div className="text-lg text-[var(--color-text-secondary)]">
+            <p>{loadingMessage}</p>
+            {(generatingNewHint || isRefreshing) && (
+              <div className="mt-4">
+                <div className="flex items-center justify-center space-x-2 mb-3">
+                  <div
+                    className="w-2 h-2 bg-[var(--color-primary)] rounded-full animate-pulse"
+                    style={{ animationDelay: '0ms' }}
+                  ></div>
+                  <div
+                    className="w-2 h-2 bg-[var(--color-primary)] rounded-full animate-pulse"
+                    style={{ animationDelay: '300ms' }}
+                  ></div>
+                  <div
+                    className="w-2 h-2 bg-[var(--color-primary)] rounded-full animate-pulse"
+                    style={{ animationDelay: '600ms' }}
+                  ></div>
+                </div>
+                <div className="w-full bg-[var(--color-background)] rounded-full h-1.5">
+                  <div className="bg-[var(--color-primary)] h-1.5 rounded-full animate-[progressPulse_3s_ease-in-out_infinite]"></div>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : error ? (
+          <div className="text-lg text-[var(--color-text-secondary)]">
+            <p className="text-red-500">{error}</p>
+            <button
+              onClick={handleRetry}
+              className="mt-4 px-4 py-2 bg-[var(--color-primary)] text-white rounded hover:bg-[var(--color-primary-dark)] transition-colors"
+            >
+              Try Again
+            </button>
+          </div>
+        ) : (
+          <div className="text-lg text-[var(--color-text-secondary)]">
+            {hint ? renderHintWithMathAndPageCircles(hint) : null}
+          </div>
+        )}
+      </div>
+    </div>
   );
 };

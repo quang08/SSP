@@ -158,9 +158,7 @@ const fetcher = async (url: string) => {
 
 // --- ADD NEW LATEX HELPERS --- START
 const cleanLatexFields = (text: string): string => {
-  return text
-    .replace(/[\x00-\x1F\x7F]/g, '') // Strip control characters
-    .replace(/\\/g, '\\'); // Normalize escaped backslashes
+  return text.replace(/[\x00-\x1F\x7F]/g, ''); // Strip control characters
 };
 
 const isValidLatex = (text: string): boolean => {
@@ -172,7 +170,6 @@ const isValidLatex = (text: string): boolean => {
   }
 };
 
-// Helper function to render with KaTeX
 const renderWithKatex = (
   text: string,
   displayMode: boolean = false
@@ -183,8 +180,6 @@ const renderWithKatex = (
       throwOnError: false,
       strict: false,
       trust: true,
-      // Remove macros if not needed or define them here
-      // macros: mathJaxConfig.tex.macros, // Assuming macros are defined elsewhere or not needed for KaTeX here
     });
   } catch (error) {
     console.error('KaTeX rendering error:', error);
@@ -192,77 +187,64 @@ const renderWithKatex = (
   }
 };
 
-// Helper function to determine if text is simple LaTeX
-const isSimpleLatex = (text: string): boolean => {
-  // Check if text contains only basic LaTeX commands and symbols
-  const simpleLatexPattern = /^[a-zA-Z0-9\s\+\-\*\/\^\{\}\(\)\[\]\_\$\\]+$/;
-  return simpleLatexPattern.test(text);
-};
-
-// Helper function to render text with LaTeX
 const renderTextWithLatex = (text: string) => {
   if (!text) return null;
 
-  // First, unescape all double backslashes
-  let processedText = text.replace(/\\/g, '\\');
-
-  // Handle special LaTeX commands and symbols
-  processedText = processedText
-    // Handle \mathbb{R} notation
+  // Normalize known LaTeX commands
+  let processedText = text
     .replace(/\\mathbb\{([^}]+)\}/g, (_, p1) => `\\mathbb{${p1}}`)
-    // Handle subscripts and superscripts with multiple characters
     .replace(/_\{([^}]+)\}/g, '_{$1}')
     .replace(/\^\{([^}]+)\}/g, '^{$1}')
-    // Handle special spacing around operators
     .replace(/\\sum(?![a-zA-Z])/g, '\\sum\\limits')
     .replace(/\\int(?![a-zA-Z])/g, '\\int\\limits')
     .replace(/\\prod(?![a-zA-Z])/g, '\\prod\\limits')
-    // Handle spacing around vertical bars and other delimiters
-    .replace(/\|/g, '\\,|\\,')
-    .replace(/\\mid/g, '\\,|\\,')
-    // Handle matrix transpose
+    .replace(/\\mid/g, '\\mid') // don't replace \mid with spacing
+    .replace(/(?<!\\)\|(?!\\)/g, '\\,|\\,') // only surround bare pipes with spacing
     .replace(/\\T(?![a-zA-Z])/g, '^{\\intercal}')
-    // Handle common statistical notation
     .replace(/\\Var/g, '\\operatorname{Var}')
     .replace(/\\Bias/g, '\\operatorname{Bias}')
     .replace(/\\MSE/g, '\\operatorname{MSE}')
     .replace(/\\EPE/g, '\\operatorname{EPE}')
-    // Handle escaped curly braces
     .replace(/\\\{/g, '{')
-    .replace(/\\\}/g, '}');
+    .replace(/\\\}/g, '}')
+    .replace(/\\left\{/g, '\\left\\{')
+    .replace(/\\right\}/g, '\\right\\{');
 
-  // Split text by existing LaTeX delimiters while preserving the delimiters
+  // Split into parts (preserve delimiters)
   const parts = processedText.split(
-    /(\$\$[\s\S]*?\$\$|\$[^$\n]*?\$|\\\([^)]*?\\\)|\\[[\s\S]*?\\])/g
+    /(\$\$[\s\S]+?\$\$|\$[^\n]+\$|\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\])/g
   );
 
-  // Generate a unique key for each part
+
   const hashString = (str: string): string => {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
       const char = str.charCodeAt(i);
       hash = (hash << 5) - hash + char;
-      hash = hash & hash; // Convert to 32-bit integer
+      hash = hash & hash; // Convert to 32-bit int
     }
-    return hash.toString(36); // Convert to base-36 for shorter strings
+    return hash.toString(36);
   };
 
   return parts.map((part, index) => {
     const key = `${index}-${hashString(part)}`;
+    const trimmed = part.trim();
 
+    // If LaTeX
     if (
-      part.startsWith('$') ||
-      part.startsWith('\\(') ||
-      part.startsWith('\\[')
+      trimmed.startsWith('$') ||
+      trimmed.startsWith('\\(') ||
+      trimmed.startsWith('\\[')
     ) {
-      // Remove delimiters and clean text
-      let latex = part
-        .replace(/^\$\$|\$\$$|^\$|\$$|^\\\(|\\\)$|^\\[|\\]$/g, '')
-        .trim();
-
-      latex = cleanLatexFields(latex);
-
-      const isDisplay = part.startsWith('$$') || part.startsWith('\\[');
+      const isDisplay = trimmed.startsWith('$$') || trimmed.startsWith('\\[');
+      const latex = cleanLatexFields(
+        trimmed
+          .replace(/^\$\$|\$\$$/g, '')
+          .replace(/^\$|\$$/g, '')
+          .replace(/^\\\(|\\\)$/g, '')
+          .replace(/^\\\[|\\\]$/g, '')
+          .trim()
+      );
 
       if (isValidLatex(latex)) {
         return (
@@ -283,10 +265,11 @@ const renderTextWithLatex = (text: string) => {
       }
     }
 
+    // Plain text
     return <span key={key}>{part}</span>;
   });
 };
-// --- ADD NEW LATEX HELPERS --- END
+
 
 const StudyGuidePage: React.FC = () => {
   const params = useParams();
@@ -783,12 +766,10 @@ const StudyGuidePage: React.FC = () => {
 
                                           {/* Source Information */}
                                           {section.source_pages &&
-                                            section.source_pages.length >
-                                              0 && (
+                                            section.source_pages.length > 0 && (
                                               <div className="text-sm text-gray-500">
                                                 Source Page
-                                                {section.source_pages.length >
-                                                1
+                                                {section.source_pages.length > 1
                                                   ? 's'
                                                   : ''}
                                                 :{' '}
@@ -800,8 +781,7 @@ const StudyGuidePage: React.FC = () => {
 
                                           {/* Source Texts */}
                                           {section.source_texts &&
-                                            section.source_texts.length >
-                                              0 && (
+                                            section.source_texts.length > 0 && (
                                               <div className="space-y-2">
                                                 {section.source_texts.map(
                                                   (
@@ -926,9 +906,7 @@ const StudyGuidePage: React.FC = () => {
                                                     ? 'bg-gradient-to-r from-[var(--color-primary)] to-purple-400 text-white hover:from-[var(--color-primary)]/90 hover:to-purple-500/90'
                                                     : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                                 )}
-                                                disabled={
-                                                  !section.is_unlocked
-                                                }
+                                                disabled={!section.is_unlocked}
                                                 title={
                                                   !section.is_unlocked
                                                     ? section.prerequisite_sections &&
@@ -947,9 +925,7 @@ const StudyGuidePage: React.FC = () => {
                                                     Required)
                                                   </>
                                                 ) : completedTests.has(
-                                                    practiceTests[
-                                                      section.title
-                                                    ]
+                                                    practiceTests[section.title]
                                                   ) ? (
                                                   'View Results'
                                                 ) : section.is_mastered ? (
@@ -964,9 +940,7 @@ const StudyGuidePage: React.FC = () => {
                                           ) : (
                                             <div className="pt-4">
                                               <Button
-                                                onClick={
-                                                  generatePracticeTests
-                                                }
+                                                onClick={generatePracticeTests}
                                                 disabled={generatingTests}
                                                 className="w-full bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-dark)]"
                                               >
@@ -1055,9 +1029,7 @@ const StudyGuidePage: React.FC = () => {
                     </p>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-600 mb-1">
-                      Practice Tests
-                    </p>
+                    <p className="text-sm text-gray-600 mb-1">Practice Tests</p>
                     <p className="font-medium">
                       {testsData?.practice_tests?.length || 0} available
                     </p>

@@ -89,7 +89,6 @@ const renderTextWithLatex = (text: string) => {
     .replace(/\\int(?![a-zA-Z])/g, '\\int\\limits')
     .replace(/\\prod(?![a-zA-Z])/g, '\\prod\\limits')
     // Handle spacing around vertical bars and other delimiters
-    .replace(/\|/g, '\\,|\\,')
     .replace(/\\mid/g, '\\,|\\,')
     // Handle matrix transpose
     .replace(/\\T(?![a-zA-Z])/g, '^{\\intercal}')
@@ -100,7 +99,9 @@ const renderTextWithLatex = (text: string) => {
     .replace(/\\EPE/g, '\\operatorname{EPE}')
     // Handle escaped curly braces
     .replace(/\\\{/g, '{')
-    .replace(/\\\}/g, '}');
+    .replace(/\\\}/g, '}')
+    .replace(/\\left\{/g, '\\left\\{')
+    .replace(/\\right\}/g, '\\right\\}')
 
   // Split text by existing LaTeX delimiters while preserving the delimiters
   const parts = processedText.split(
