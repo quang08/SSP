@@ -71,87 +71,87 @@ const isSimpleLatex = (text: string): boolean => {
 };
 
 // Helper function to render text with LaTeX
-const renderTextWithLatex = (text: string) => {
+export const renderTextWithLatex = (text: string) => {
   if (!text) return null;
 
-  // First, unescape all double backslashes
-  let processedText = text.replace(/\\/g, '\\');
+  // --- Step 1: Normalize double-escaped characters ---
+  let processedText = text
+    .replace(/\\\\\(/g, '\\(')
+    .replace(/\\\\\)/g, '\\)')
+    .replace(/\\\\\[/g, '\\[')
+    .replace(/\\\\\]/g, '\\]')
+    .replace(/\\\\/g, '\\');
 
-  // Handle special LaTeX commands and symbols
+  // --- Step 2: Normalize some LaTeX commands ---
   processedText = processedText
-    // Handle \mathbb{R} notation
     .replace(/\\mathbb\{([^}]+)\}/g, (_, p1) => `\\mathbb{${p1}}`)
-    // Handle subscripts and superscripts with multiple characters
-    .replace(/_\{([^}]+)\}/g, '_{$1}')
-    .replace(/\^\{([^}]+)\}/g, '^{$1}')
-    // Handle special spacing around operators
+    .replace(/_{([^}]+)}/g, '_{$1}')
+    .replace(/\^{([^}]+)}/g, '^{$1}')
     .replace(/\\sum(?![a-zA-Z])/g, '\\sum\\limits')
     .replace(/\\int(?![a-zA-Z])/g, '\\int\\limits')
     .replace(/\\prod(?![a-zA-Z])/g, '\\prod\\limits')
-    // Handle spacing around vertical bars and other delimiters
-    .replace(/\\mid/g, '\\,|\\,')
-    // Handle matrix transpose
+    .replace(/\\mid/g, '|')
     .replace(/\\T(?![a-zA-Z])/g, '^{\\intercal}')
-    // Handle common statistical notation
     .replace(/\\Var/g, '\\operatorname{Var}')
     .replace(/\\Bias/g, '\\operatorname{Bias}')
     .replace(/\\MSE/g, '\\operatorname{MSE}')
     .replace(/\\EPE/g, '\\operatorname{EPE}')
-    // Handle escaped curly braces
-    .replace(/\\\{/g, '{')
-    .replace(/\\\}/g, '}')
-    .replace(/\\left\{/g, '\\left\\{')
-    .replace(/\\right\}/g, '\\right\\}')
+    .replace(/\\{/g, '{')
+    .replace(/\\}/g, '}');
 
-  // Split text by existing LaTeX delimiters while preserving the delimiters
+  // --- Step 3: Split by math delimiters while preserving them ---
   const parts = processedText.split(
-    /(\$\$[\s\S]*?\$\$|\$[^$\n]*?\$|\\\([^)]*?\\\)|\\[[\s\S]*?\\])/g
+    /(\$\$[\s\S]+?\$\$|\$[^\n]+\$|\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\])/g
   );
 
-  // Generate a unique key for each part
+  // --- Step 4: Hash function for keys ---
   const hashString = (str: string): string => {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
-      hash = hash & hash; // Convert to 32-bit integer
+      hash = (hash << 5) - hash + str.charCodeAt(i);
+      hash |= 0;
     }
-    return hash.toString(36); // Convert to base-36 for shorter strings
+    return hash.toString(36);
   };
 
+  // --- Step 5: Render each part ---
   return parts.map((part, index) => {
     const key = `${index}-${hashString(part)}`;
+    const trimmed = part.trim();
 
-    if (
-      part.startsWith('$') ||
-      part.startsWith('\\(') ||
-      part.startsWith('\\[')
-    ) {
-      // Remove delimiters and clean text
-      let latex = part
-        .replace(/^\$\$|\$\$$|^\$|\$$|^\\\(|\\\)$|^\\[|\\]$/g, '')
-        .trim();
+    const isLatex = /^(\$\$.*\$\$|\$.*\$|\\\(.*\\\)|\\\[.*\\\])$/.test(trimmed);
 
-      latex = cleanLatexFields(latex);
+    if (isLatex) {
+      // Remove only the outermost delimiters
+      let latex = trimmed;
 
-      const isDisplay = part.startsWith('$$') || part.startsWith('\\[');
+      if (latex.startsWith('$$') && latex.endsWith('$$')) {
+        latex = latex.slice(2, -2);
+      } else if (latex.startsWith('$') && latex.endsWith('$')) {
+        latex = latex.slice(1, -1);
+      } else if (latex.startsWith('\\(') && latex.endsWith('\\)')) {
+        latex = latex.slice(2, -2);
+      } else if (latex.startsWith('\\[') && latex.endsWith('\\]')) {
+        latex = latex.slice(2, -2);
+      }
 
-      if (isValidLatex(latex)) {
+      try {
         return (
           <span
             key={key}
             dangerouslySetInnerHTML={{
-              __html: renderWithKatex(latex, isDisplay),
+              __html: katex.renderToString(latex, {
+                displayMode:
+                  trimmed.startsWith('$$') || trimmed.startsWith('\\['),
+                throwOnError: false,
+                trust: true,
+              }),
             }}
           />
         );
-      } else {
-        console.warn('Invalid LaTeX detected:', latex);
-        return (
-          <span key={key} className="text-red-500">
-            Invalid LaTeX: {latex}
-          </span>
-        );
+      } catch (e) {
+        console.error('KaTeX render error:', e, '\nLatex:', latex);
+        return <span key={key}>{part}</span>;
       }
     }
 
