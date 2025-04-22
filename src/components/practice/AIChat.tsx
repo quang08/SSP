@@ -51,19 +51,9 @@ const cleanLatexFields = (text: string): string => {
 
 // Simple function to estimate tokens (approximately 4 characters per token)
 const estimateTokens = (text: string): number => {
-  let processedText = text.replace(
-    /\\\\\\((.*?)\\\\\\\)/g,
-    (_, equation) => `$${equation}$`
-  );
-
-  // Convert block LaTeX expressions
-  processedText = processedText.replace(
-    /\\\\\\[(.*?)\\\\]/gm,
-    (_, equation) => `\n\n$$${equation}$$\n\n`
-  );
-
-  // Clean the text using the helper function
-  return cleanLatexFields(processedText);
+  if (!text) return 0;
+  // Corrected: Only estimate tokens based on length
+  return Math.ceil(text.length / 4);
 };
 
 export const AIChat: React.FC<AIChatProps> = ({
