@@ -156,24 +156,32 @@ const fetcher = async (url: string) => {
   return res.json();
 };
 
-// --- ADD NEW LATEX HELPERS --- START
 const cleanLatexFields = (text: string): string => {
-  return text.replace(/[\x00-\x1F\x7F]/g, ''); // Strip control characters
+  // Remove control characters
+  let cleaned = text.replace(/[\x00-\x1F\x7F]/g, '');
+
+  // Escape # when inside \text{...}
+  cleaned = cleaned.replace(/\\text\{([^}]*)\}/g, (match, content) => {
+    const escaped = content.replace(/#/g, '\\#');
+    return `\\text{${escaped}}`;
+  });
+
+  return cleaned;
 };
 
 const isValidLatex = (text: string): boolean => {
   try {
-    katex.renderToString(text, { throwOnError: true });
+    katex.renderToString(text, {
+      throwOnError: false,
+      strict: false,
+    });
     return true;
   } catch {
     return false;
   }
 };
 
-const renderWithKatex = (
-  text: string,
-  displayMode: boolean = false
-): string => {
+const renderWithKatex = (text: string, displayMode = false): string => {
   try {
     return katex.renderToString(text, {
       displayMode,
@@ -190,30 +198,7 @@ const renderWithKatex = (
 const renderTextWithLatex = (text: string) => {
   if (!text) return null;
 
-  // Normalize known LaTeX commands
-  const processedText = text
-    .replace(/\ext\{([^}]+)\}/g, (_, p1) => `\text{${p1}}`)
-    .replace(/\imes/g, '\times')
-    .replace(/\mathbb\{([^}]+)\}/g, (_, p1) => `\mathbb{${p1}}`)
-    .replace(/_\{([^}]+)\}/g, '_{$1}')
-    .replace(/\^\{([^}]+)\}/g, '^{$1}')
-    .replace(/\sum(?![a-zA-Z])/g, '\sum\limits')
-    .replace(/\int(?![a-zA-Z])/g, '\int\limits')
-    .replace(/\prod(?![a-zA-Z])/g, '\prod\limits')
-    .replace(/\mid/g, '\mid')
-    .replace(/(?<!\\)\|(?!\\)/g, '\,|\,')
-    .replace(/\T(?![a-zA-Z])/g, '^{\intercal}')
-    .replace(/\Var/g, '\operatorname{Var}')
-    .replace(/\Bias/g, '\operatorname{Bias}')
-    .replace(/\MSE/g, '\operatorname{MSE}')
-    .replace(/\EPE/g, '\operatorname{EPE}')
-    .replace(/\{/g, '{')
-    .replace(/\}/g, '}')
-    .replace(/\left\{/g, '\left\{')
-    .replace(/\right\}/g, '\right\}');
-
-  // Split into parts (preserve delimiters)
-  const parts = processedText.split(
+  const parts = text.split(
     /(\$\$[\s\S]+?\$\$|\$[^\n]+\$|\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\])/g
   );
 
@@ -222,7 +207,7 @@ const renderTextWithLatex = (text: string) => {
     for (let i = 0; i < str.length; i++) {
       const char = str.charCodeAt(i);
       hash = (hash << 5) - hash + char;
-      hash = hash & hash; // Convert to 32-bit int
+      hash = hash & hash;
     }
     return hash.toString(36);
   };
@@ -231,13 +216,13 @@ const renderTextWithLatex = (text: string) => {
     const key = `${index}-${hashString(part)}`;
     const trimmed = part.trim();
 
-    // If LaTeX
     if (
       trimmed.startsWith('$') ||
       trimmed.startsWith('\\(') ||
       trimmed.startsWith('\\[')
     ) {
       const isDisplay = trimmed.startsWith('$$') || trimmed.startsWith('\\[');
+
       const latex = cleanLatexFields(
         trimmed
           .replace(/^\$\$|\$\$$/g, '')
@@ -266,7 +251,6 @@ const renderTextWithLatex = (text: string) => {
       }
     }
 
-    // Plain text
     return <span key={key}>{part}</span>;
   });
 };
