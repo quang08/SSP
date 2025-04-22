@@ -191,15 +191,18 @@ const renderTextWithLatex = (text: string) => {
   if (!text) return null;
 
   // Normalize known LaTeX commands
+  // Normalize known LaTeX commands
   let processedText = text
+    .replace(/\\ext\{([^}]+)\}/g, (_, p1) => `\\text{${p1}}`)
+    .replace(/\\imes/g, '\\times')
     .replace(/\\mathbb\{([^}]+)\}/g, (_, p1) => `\\mathbb{${p1}}`)
     .replace(/_\{([^}]+)\}/g, '_{$1}')
     .replace(/\^\{([^}]+)\}/g, '^{$1}')
     .replace(/\\sum(?![a-zA-Z])/g, '\\sum\\limits')
     .replace(/\\int(?![a-zA-Z])/g, '\\int\\limits')
     .replace(/\\prod(?![a-zA-Z])/g, '\\prod\\limits')
-    .replace(/\\mid/g, '\\mid') // don't replace \mid with spacing
-    .replace(/(?<!\\)\|(?!\\)/g, '\\,|\\,') // only surround bare pipes with spacing
+    .replace(/\\mid/g, '\\mid')
+    .replace(/(?<!\\)\|(?!\\)/g, '\\,|\\,')
     .replace(/\\T(?![a-zA-Z])/g, '^{\\intercal}')
     .replace(/\\Var/g, '\\operatorname{Var}')
     .replace(/\\Bias/g, '\\operatorname{Bias}')
@@ -214,7 +217,6 @@ const renderTextWithLatex = (text: string) => {
   const parts = processedText.split(
     /(\$\$[\s\S]+?\$\$|\$[^\n]+\$|\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\])/g
   );
-
 
   const hashString = (str: string): string => {
     let hash = 0;

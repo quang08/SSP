@@ -509,16 +509,16 @@ export const AIChat: React.FC<AIChatProps> = ({
   const formatMathNotation = (text: string): string => {
     if (!text) return '';
 
-    // Convert inline LaTeX expressions
+    // Convert inline LaTeX expressions (Corrected Regex: \\\((.*?)\\\))
     let processedText = text.replace(
-      /\\\\\\((.*?)\\\\\\\)/g,
+      /\\\((.*?)\\\)/g,
       (_, equation) => `$${equation}$`
     );
 
-    // Convert block LaTeX expressions
+    // Convert block LaTeX expressions (Corrected Regex: \\\[(.*?)\\\])
     processedText = processedText.replace(
-      /\\\\\\[(.*?)\\\\]/gm,
-      (_, equation) => `\n\n$$${equation}$$\n\n`
+      /\\\[(.*?)\\\]/gm,
+      (_, equation) => `\n\n$$${equation}$$`
     );
 
     // Clean the text using the helper function
