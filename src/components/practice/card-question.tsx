@@ -29,6 +29,22 @@ interface QuestionCardProps {
   onUpdateConfidence?: (questionId: string, confidenceLevel: number) => void;
 }
 
+// --- ADD NEW LATEX HELPERS --- START
+const cleanLatexFields = (text: string): string => {
+  return text
+    .replace(/[\x00-\x1F\x7F]/g, '') // Strip control characters
+    .replace(/\\/g, '\\'); // Normalize escaped backslashes
+};
+
+const isValidLatex = (text: string): boolean => {
+  try {
+    katex.renderToString(text, { throwOnError: true });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 // Helper function to render with KaTeX
 const renderWithKatex = (
   text: string,
@@ -59,15 +75,15 @@ const renderTextWithLatex = (text: string) => {
   if (!text) return null;
 
   // First, unescape all double backslashes
-  let processedText = text.replace(/\\\\/g, '\\');
+  let processedText = text.replace(/\\/g, '\\');
 
   // Handle special LaTeX commands and symbols
   processedText = processedText
     // Handle \mathbb{R} notation
     .replace(/\\mathbb\{([^}]+)\}/g, (_, p1) => `\\mathbb{${p1}}`)
     // Handle subscripts and superscripts with multiple characters
-    .replace(/_{([^}]+)}/g, '_{$1}')
-    .replace(/\^{([^}]+)}/g, '^{$1}')
+    .replace(/_\{([^}]+)\}/g, '_{$1}')
+    .replace(/\^\{([^}]+)\}/g, '^{$1}')
     // Handle special spacing around operators
     .replace(/\\sum(?![a-zA-Z])/g, '\\sum\\limits')
     .replace(/\\int(?![a-zA-Z])/g, '\\int\\limits')
@@ -88,7 +104,7 @@ const renderTextWithLatex = (text: string) => {
 
   // Split text by existing LaTeX delimiters while preserving the delimiters
   const parts = processedText.split(
-    /(\$\$[\s\S]*?\$\$|\$[^$\n]*?\$|\\\([^)]*?\\\)|\\\[[\s\S]*?\\\])/g
+    /(\$\$[\s\S]*?\$\$|\$[^$\n]*?\$|\\\([^)]*?\\\)|\\[[\s\S]*?\\])/g
   );
 
   // Generate a unique key for each part
@@ -103,7 +119,6 @@ const renderTextWithLatex = (text: string) => {
   };
 
   return parts.map((part, index) => {
-    // Generate a more unique key using content hash
     const key = `${index}-${hashString(part)}`;
 
     if (
@@ -111,15 +126,16 @@ const renderTextWithLatex = (text: string) => {
       part.startsWith('\\(') ||
       part.startsWith('\\[')
     ) {
-      // Remove the delimiters
+      // Remove delimiters and clean text
       let latex = part
-        .replace(/^\$\$|\$\$$|^\$|\$$|^\\\(|\\\)$|^\\\[|\\\]$/g, '')
+        .replace(/^\$\$|\$\$$|^\$|\$$|^\\\(|\\\)$|^\\[|\\]$/g, '')
         .trim();
+
+      latex = cleanLatexFields(latex);
 
       const isDisplay = part.startsWith('$$') || part.startsWith('\\[');
 
-      // Use KaTeX for simple expressions and MathJax for complex ones
-      if (isSimpleLatex(latex)) {
+      if (isValidLatex(latex)) {
         return (
           <span
             key={key}
@@ -128,43 +144,20 @@ const renderTextWithLatex = (text: string) => {
             }}
           />
         );
-      }
-
-      // Wrap the LaTeX in appropriate delimiters for MathJax
-      latex = isDisplay ? `$$${latex}$$` : `$${latex}$`;
-
-      return (
-        <MathJax key={key} inline={!isDisplay} dynamic={true}>
-          {latex}
-        </MathJax>
-      );
-    }
-
-    // Check if the part contains any LaTeX-like content
-    if (part.includes('\\') || /[_^{}]/.test(part)) {
-      // Use KaTeX for simple expressions
-      if (isSimpleLatex(part)) {
+      } else {
+        console.warn('Invalid LaTeX detected:', latex);
         return (
-          <span
-            key={key}
-            dangerouslySetInnerHTML={{
-              __html: renderWithKatex(part, false),
-            }}
-          />
+          <span key={key} className="text-red-500">
+            Invalid LaTeX: {latex}
+          </span>
         );
       }
-
-      // Use MathJax for complex expressions
-      return (
-        <MathJax key={key} inline={true} dynamic={true}>
-          {`$${part}$`}
-        </MathJax>
-      );
     }
 
     return <span key={key}>{part}</span>;
   });
 };
+// --- ADD NEW LATEX HELPERS --- END
 
 const QuestionCard = ({
   questionNumber,

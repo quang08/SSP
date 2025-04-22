@@ -40,9 +40,25 @@ interface AIChatProps {
   isCorrect?: boolean; // Whether the student's answer was correct
 }
 
+// Clean LaTeX helper function
+const cleanLatexFields = (text: string): string => {
+  return text
+    .replace(/[\\x00-\\x1F\\x7F]/g, '') // Strip control characters
+    .replace(/\\\\/g, '\\\\\'); // Normalize escaped backslashes
+};
+
 // Simple function to estimate tokens (approximately 4 characters per token)
 const estimateTokens = (text: string): number => {
-  return Math.ceil(text.length / 4);
+  let processedText = text.replace(/\\\\\\((.*?)\\\\\\\)/g, (_, equation) => `$${equation}$`);
+
+  // Convert block LaTeX expressions
+  processedText = processedText.replace(
+    /\\\\\\[(.*?)\\\\]/gm,
+    (_, equation) => `\n\n$$${equation}$$\n\n`
+  );
+
+  // Clean the text using the helper function
+  return cleanLatexFields(processedText);
 };
 
 export const AIChat: React.FC<AIChatProps> = ({
@@ -499,15 +515,16 @@ export const AIChat: React.FC<AIChatProps> = ({
     if (!text) return '';
 
     // Convert inline LaTeX expressions
-    text = text.replace(/\\\((.*?)\\\)/g, (_, equation) => `$${equation}$`);
+    let processedText = text.replace(/\\\\\\((.*?)\\\\\\\)/g, (_, equation) => `$${equation}$`);
 
     // Convert block LaTeX expressions
-    text = text.replace(
-      /\\\[(.*?)\\\]/gm,
+    processedText = processedText.replace(
+      /\\\\\\[(.*?)\\\\]/gm,
       (_, equation) => `\n\n$$${equation}$$\n\n`
     );
 
-    return text;
+    // Clean the text using the helper function
+    return cleanLatexFields(processedText);
   };
 
   return (

@@ -29,6 +29,22 @@ interface ShortAnswerQuestionProps {
   onImageChange: (questionId: string, imageDataUri: string | null) => void;
 }
 
+const cleanLatexFields = (text: string): string => {
+  return text
+    .replace(/[\x00-\x1F\x7F]/g, '') // Strip control characters
+    .replace(/\\\\/g, '\\'); // Normalize escaped backslashes
+};
+
+const isValidLatex = (text: string): boolean => {
+  try {
+    katex.renderToString(text, { throwOnError: true });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+
 // Helper function to render with KaTeX
 const renderWithKatex = (
   text: string,
@@ -102,8 +118,69 @@ const renderTextWithLatex = (text: string) => {
     return hash.toString(36); // Convert to base-36 for shorter strings
   };
 
+  // return parts.map((part, index) => {
+  //   // Generate a more unique key using content hash
+  //   const key = `${index}-${hashString(part)}`;
+
+  //   if (
+  //     part.startsWith('$') ||
+  //     part.startsWith('\\(') ||
+  //     part.startsWith('\\[')
+  //   ) {
+  //     // Remove the delimiters
+  //     let latex = part
+  //       .replace(/^\$\$|\$\$$|^\$|\$$|^\\\(|\\\)$|^\\\[|\\\]$/g, '')
+  //       .trim();
+
+  //     const isDisplay = part.startsWith('$$') || part.startsWith('\\[');
+
+  //     // Use KaTeX for simple expressions and MathJax for complex ones
+  //     if (isSimpleLatex(latex)) {
+  //       return (
+  //         <span
+  //           key={key}
+  //           dangerouslySetInnerHTML={{
+  //             __html: renderWithKatex(latex, isDisplay),
+  //           }}
+  //         />
+  //       );
+  //     }
+
+  //     // Wrap the LaTeX in appropriate delimiters for MathJax
+  //     latex = isDisplay ? `$$${latex}$$` : `$${latex}$`;
+
+  //     return (
+  //       <MathJax key={key} inline={!isDisplay} dynamic={true}>
+  //         {latex}
+  //       </MathJax>
+  //     );
+  //   }
+
+  //   // Check if the part contains any LaTeX-like content
+  //   if (part.includes('\\') || /[_^{}]/.test(part)) {
+  //     // Use KaTeX for simple expressions
+  //     if (isSimpleLatex(part)) {
+  //       return (
+  //         <span
+  //           key={key}
+  //           dangerouslySetInnerHTML={{
+  //             __html: renderWithKatex(part, false),
+  //           }}
+  //         />
+  //       );
+  //     }
+
+  //     // Use MathJax for complex expressions
+  //     return (
+  //       <MathJax key={key} inline={true} dynamic={true}>
+  //         {`$${part}$`}
+  //       </MathJax>
+  //     );
+  //   }
+
+  //   return <span key={key}>{part}</span>;
+  // });
   return parts.map((part, index) => {
-    // Generate a more unique key using content hash
     const key = `${index}-${hashString(part)}`;
 
     if (
@@ -111,15 +188,16 @@ const renderTextWithLatex = (text: string) => {
       part.startsWith('\\(') ||
       part.startsWith('\\[')
     ) {
-      // Remove the delimiters
+      // Remove delimiters and clean text
       let latex = part
         .replace(/^\$\$|\$\$$|^\$|\$$|^\\\(|\\\)$|^\\\[|\\\]$/g, '')
         .trim();
 
+      latex = cleanLatexFields(latex);
+
       const isDisplay = part.startsWith('$$') || part.startsWith('\\[');
 
-      // Use KaTeX for simple expressions and MathJax for complex ones
-      if (isSimpleLatex(latex)) {
+      if (isValidLatex(latex)) {
         return (
           <span
             key={key}
@@ -128,38 +206,14 @@ const renderTextWithLatex = (text: string) => {
             }}
           />
         );
-      }
-
-      // Wrap the LaTeX in appropriate delimiters for MathJax
-      latex = isDisplay ? `$$${latex}$$` : `$${latex}$`;
-
-      return (
-        <MathJax key={key} inline={!isDisplay} dynamic={true}>
-          {latex}
-        </MathJax>
-      );
-    }
-
-    // Check if the part contains any LaTeX-like content
-    if (part.includes('\\') || /[_^{}]/.test(part)) {
-      // Use KaTeX for simple expressions
-      if (isSimpleLatex(part)) {
+      } else {
+        console.warn('Invalid LaTeX detected:', latex);
         return (
-          <span
-            key={key}
-            dangerouslySetInnerHTML={{
-              __html: renderWithKatex(part, false),
-            }}
-          />
+          <span key={key} className="text-red-500">
+            Invalid LaTeX: {latex}
+          </span>
         );
       }
-
-      // Use MathJax for complex expressions
-      return (
-        <MathJax key={key} inline={true} dynamic={true}>
-          {`$${part}$`}
-        </MathJax>
-      );
     }
 
     return <span key={key}>{part}</span>;
