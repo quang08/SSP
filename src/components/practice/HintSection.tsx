@@ -65,83 +65,92 @@ const stripMathDelimiters = (latex: string): string => {
     .replace(/^\\\((.*)\\\)$/, '$1'); // \(...\)
 };
 
-const renderTextWithLatex = (text: string) => {
+export const renderTextWithLatex = (text: string) => {
   if (!text) return null;
 
-  // First, unescape all double backslashes
-  let processedText = text.replace(/\\/g, '\\');
+  // --- Step 1: Normalize double-escaped characters ---
+  let processedText = text
+    .replace(/\\\\\(/g, '\\(')
+    .replace(/\\\\\)/g, '\\)')
+    .replace(/\\\\\[/g, '\\[')
+    .replace(/\\\\\]/g, '\\]')
+    .replace(/\\\\/g, '\\');
 
-  // Handle special LaTeX commands and symbols (Keep relevant ones)
+  // --- Step 2: Normalize some LaTeX commands ---
   processedText = processedText
-    // Handle \mathbb{R} notation
     .replace(/\\mathbb\{([^}]+)\}/g, (_, p1) => `\\mathbb{${p1}}`)
-    // Handle subscripts and superscripts with multiple characters
-    .replace(/_\{([^}]+)\}/g, '_{$1}')
-    .replace(/\^\{([^}]+)\}/g, '^{$1}')
-    // Handle escaped curly braces
-    .replace(/\\\{/g, '{')
-    .replace(/\\\}/g, '}');
+    .replace(/_{([^}]+)}/g, '_{$1}')
+    .replace(/\^{([^}]+)}/g, '^{$1}')
+    .replace(/\\sum(?![a-zA-Z])/g, '\\sum\\limits')
+    .replace(/\\int(?![a-zA-Z])/g, '\\int\\limits')
+    .replace(/\\prod(?![a-zA-Z])/g, '\\prod\\limits')
+    .replace(/\\mid/g, '|')
+    .replace(/\\T(?![a-zA-Z])/g, '^{\\intercal}')
+    .replace(/\\Var/g, '\\operatorname{Var}')
+    .replace(/\\Bias/g, '\\operatorname{Bias}')
+    .replace(/\\MSE/g, '\\operatorname{MSE}')
+    .replace(/\\EPE/g, '\\operatorname{EPE}')
+    .replace(/\\{/g, '{')
+    .replace(/\\}/g, '}');
 
-  // Use improved splitting regex
+  // --- Step 3: Split by math delimiters while preserving them ---
   const parts = processedText.split(
-    /(\$\$[\s\S]+?\$\$|\$[^$\n]+?\$|\\\([^\)]+?\\\)|\\[[^\\]]+?\\])/g
+    /(\$\$[\s\S]+?\$\$|\$[^\n]+\$|\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\])/g
   );
 
-  // Generate a unique key for each part
+
+  // --- Step 4: Hash function for keys ---
   const hashString = (str: string): string => {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
-      hash = hash & hash; // Convert to 32-bit integer
+      hash = (hash << 5) - hash + str.charCodeAt(i);
+      hash |= 0;
     }
-    return hash.toString(36); // Convert to base-36 for shorter strings
+    return hash.toString(36);
   };
 
+  // --- Step 5: Render each part ---
   return parts.map((part, index) => {
-    if (typeof part !== 'string' || part.length === 0) {
-      // Skip empty or non-string parts that split might create
-      return null;
-    }
     const key = `${index}-${hashString(part)}`;
+    const trimmed = part.trim();
 
-    if (
-      part.startsWith('$$') ||
-      part.startsWith('$') ||
-      part.startsWith('\\(') ||
-      part.startsWith('\\[')
-    ) {
-      const math = stripMathDelimiters(part);
-      const cleanedMath = cleanLatexFields(math);
-      const isDisplay = part.startsWith('$$') || part.startsWith('\\[');
+    const isLatex = /^(\$\$.*\$\$|\$.*\$|\\\(.*\\\)|\\\[.*\\\])$/.test(trimmed);
 
-      if (isValidLatex(cleanedMath)) {
+    if (isLatex) {
+      // Remove only the outermost delimiters
+      let latex = trimmed;
+
+      if (latex.startsWith('$$') && latex.endsWith('$$')) {
+        latex = latex.slice(2, -2);
+      } else if (latex.startsWith('$') && latex.endsWith('$')) {
+        latex = latex.slice(1, -1);
+      } else if (latex.startsWith('\\(') && latex.endsWith('\\)')) {
+        latex = latex.slice(2, -2);
+      } else if (latex.startsWith('\\[') && latex.endsWith('\\]')) {
+        latex = latex.slice(2, -2);
+      }
+
+      try {
         return (
           <span
             key={key}
             dangerouslySetInnerHTML={{
-              __html: renderWithKatex(cleanedMath, isDisplay),
+              __html: katex.renderToString(latex, {
+                displayMode:
+                  trimmed.startsWith('$$') || trimmed.startsWith('\\['),
+                throwOnError: false,
+                trust: true,
+              }),
             }}
           />
         );
-      } else {
-        console.warn(
-          'Invalid LaTeX detected after cleaning:',
-          cleanedMath,
-          'Original part:',
-          part
-        );
-        // Fallback to rendering the original part as text if KaTeX fails
-        return (
-          <span key={key} className="text-red-500">
-            {part}
-          </span>
-        );
+      } catch (e) {
+        console.error('KaTeX render error:', e, '\nLatex:', latex);
+        return <span key={key}>{part}</span>;
       }
-    } else {
-      // Render non-math parts as plain text
-      return <span key={key}>{part}</span>;
     }
+
+    return <span key={key}>{part}</span>;
   });
 };
 

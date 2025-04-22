@@ -212,8 +212,9 @@ const renderTextWithLatex = (text: string) => {
 
   // Split into parts (preserve delimiters)
   const parts = processedText.split(
-    /(\$\$[\s\S]*?\$\$|\$[^$\n]*?\$|\\\([^)]*?\\\)|\\[[\s\S]*?\\])/g
+    /(\$\$[\s\S]+?\$\$|\$[^\n]+\$|\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\])/g
   );
+
 
   const hashString = (str: string): string => {
     let hash = 0;
