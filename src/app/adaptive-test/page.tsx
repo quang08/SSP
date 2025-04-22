@@ -378,18 +378,23 @@ export default function AdaptiveTestPage() {
       if (!response.ok) {
         // Improved error handling
         console.error('API Error:', result.message || response.statusText);
+        // Use the message from the backend response in the toast
         throw new Error(
           result.message || `Request failed with status ${response.status}`
         );
       }
 
+      // Check if the backend explicitly indicated failure (e.g., eligibility)
       if (!result.practice_test) {
-        // Handle case where backend confirms generation failed (e.g., eligibility)
+        // Handle case where backend confirms generation failed
+        // Use the message directly from the backend response
         toast.info(result.message || 'Could not generate adaptive test.');
-        throw new Error(
-          result.message ||
-            'Failed to generate adaptive test (no test data returned)'
-        );
+        // Optionally, still throw an error if needed downstream, but the toast shows the specific reason
+        // throw new Error(
+        //   result.message ||
+        //     'Failed to generate adaptive test (no test data returned)'
+        // );
+        return; // Stop execution here if generation failed as indicated by backend
       }
 
       toast.success(
@@ -403,6 +408,7 @@ export default function AdaptiveTestPage() {
       );
     } catch (error) {
       console.error('Error generating adaptive test:', error);
+      // The toast message will now show the specific reason from the backend if it was thrown
       toast.error(
         `Failed to generate adaptive test: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
@@ -465,9 +471,26 @@ export default function AdaptiveTestPage() {
         <Header />
         <main className="flex-1">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
-            <h1 className="text-3xl font-bold text-gray-800 mb-8">
+            <h1 className="text-3xl font-bold text-gray-800 mb-2">
               Adaptive Tests by Chapter
             </h1>
+            <p className="text-md text-gray-600 mb-8">
+              Generate an adaptive test for a chapter once you have completed
+              all of its sections.
+            </p>
+            {/* START: Added Eligibility Description */}
+            <div className="mb-8 p-4 bg-blue-50 border border-blue-200 rounded-md text-blue-800">
+              <p className="text-sm font-medium">
+                <strong className="font-semibold">Eligibility:</strong> To
+                generate an adaptive test for a chapter, you must first attempt
+                all sections within that chapter. Additionally, you need to
+                achieve mastery in at least{' '}
+                <strong className="font-semibold">60%</strong>{' '}
+                {/* TODO: Fetch this threshold dynamically */} of those
+                sections.
+              </p>
+            </div>
+            {/* END: Added Eligibility Description */}
 
             {isLoading ? (
               <div className="flex justify-center items-center p-10">
