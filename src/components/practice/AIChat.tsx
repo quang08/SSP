@@ -42,14 +42,19 @@ interface AIChatProps {
 
 // Clean LaTeX helper function
 const cleanLatexFields = (text: string): string => {
+  if (!text) return '';
   return text
-    .replace(/[\\x00-\\x1F\\x7F]/g, '') // Strip control characters
-    .replace(/\\\\/g, '\\\\\'); // Normalize escaped backslashes
+    .replace(/\r\n|\r|\n/g, '\n') // Standardize newlines
+    .replace(/[\x00-\x1F\x7F]/g, '') // Strip standard control characters
+    .replace(/\\/g, '\\'); // Normalize escaped backslashes (ensure this is safe for LaTeX)
 };
 
 // Simple function to estimate tokens (approximately 4 characters per token)
 const estimateTokens = (text: string): number => {
-  let processedText = text.replace(/\\\\\\((.*?)\\\\\\\)/g, (_, equation) => `$${equation}$`);
+  let processedText = text.replace(
+    /\\\\\\((.*?)\\\\\\\)/g,
+    (_, equation) => `$${equation}$`
+  );
 
   // Convert block LaTeX expressions
   processedText = processedText.replace(
@@ -515,7 +520,10 @@ export const AIChat: React.FC<AIChatProps> = ({
     if (!text) return '';
 
     // Convert inline LaTeX expressions
-    let processedText = text.replace(/\\\\\\((.*?)\\\\\\\)/g, (_, equation) => `$${equation}$`);
+    let processedText = text.replace(
+      /\\\\\\((.*?)\\\\\\\)/g,
+      (_, equation) => `$${equation}$`
+    );
 
     // Convert block LaTeX expressions
     processedText = processedText.replace(
