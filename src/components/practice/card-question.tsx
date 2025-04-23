@@ -84,7 +84,9 @@ const renderTextWithLatex = (text: string) => {
     .replace(/\\EPE/g, '\\operatorname{EPE}')
     // Handle escaped curly braces
     .replace(/\\\{/g, '{')
-    .replace(/\\\}/g, '}');
+    .replace(/\\\}/g, '}')
+    .replace(/\\left\s*{/g, '\\left\\{')
+    .replace(/\\right\s*}/g, '\\right\\}');
 
   // Split text by existing LaTeX delimiters while preserving the delimiters
   const parts = processedText.split(
@@ -111,14 +113,11 @@ const renderTextWithLatex = (text: string) => {
       part.startsWith('\\(') ||
       part.startsWith('\\[')
     ) {
-      // Remove the delimiters
       let latex = part
         .replace(/^\$\$|\$\$$|^\$|\$$|^\\\(|\\\)$|^\\\[|\\\]$/g, '')
         .trim();
-
       const isDisplay = part.startsWith('$$') || part.startsWith('\\[');
 
-      // Use KaTeX for simple expressions and MathJax for complex ones
       if (isSimpleLatex(latex)) {
         return (
           <span
@@ -130,39 +129,17 @@ const renderTextWithLatex = (text: string) => {
         );
       }
 
-      // Wrap the LaTeX in appropriate delimiters for MathJax
-      latex = isDisplay ? `$$${latex}$$` : `$${latex}$`;
-
       return (
         <MathJax key={key} inline={!isDisplay} dynamic={true}>
-          {latex}
+          {isDisplay ? `$$${latex}$$` : `$${latex}$`}
         </MathJax>
       );
     }
 
-    // Check if the part contains any LaTeX-like content
-    if (part.includes('\\') || /[_^{}]/.test(part)) {
-      // Use KaTeX for simple expressions
-      if (isSimpleLatex(part)) {
-        return (
-          <span
-            key={key}
-            dangerouslySetInnerHTML={{
-              __html: renderWithKatex(part, false),
-            }}
-          />
-        );
-      }
+    // Only here you can escape # if needed, e.g. for non-LaTeX text
+    const cleaned = part.replace(/#/g, '');
 
-      // Use MathJax for complex expressions
-      return (
-        <MathJax key={key} inline={true} dynamic={true}>
-          {`$${part}$`}
-        </MathJax>
-      );
-    }
-
-    return <span key={key}>{part}</span>;
+    return <span key={key}>{cleaned}</span>;
   });
 };
 
