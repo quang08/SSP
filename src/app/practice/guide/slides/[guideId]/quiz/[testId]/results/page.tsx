@@ -290,11 +290,30 @@ const SlidesQuizResultsPage: React.FC = () => {
         // Store the submission ID in state
         setActualSubmissionId(responseSubmissionId);
 
+        // --- FIX: Extract questions from the LATEST attempt ---
+        let latestAttemptQuestions = [];
+        if (data.submission.attempts && data.submission.attempts.length > 0) {
+          // Get the last element (latest attempt)
+          const latestAttempt =
+            data.submission.attempts[data.submission.attempts.length - 1];
+          latestAttemptQuestions = latestAttempt.questions || [];
+          console.log(
+            `Extracted ${latestAttemptQuestions.length} questions from latest attempt #${latestAttempt.attempt_number}`
+          );
+        } else {
+          // Fallback to top-level questions if no attempts array (or empty)
+          latestAttemptQuestions = data.submission.questions || [];
+          console.log(
+            'Using fallback top-level questions as attempts array is missing/empty.'
+          );
+        }
+        // --- END FIX ---
+
         // Prepare the result data, ensuring questions are available
         const processedResults = {
           ...data.submission,
-          // Extract questions from the most recent attempt if they exist
-          questions: data.submission.attempts?.[0]?.questions || [],
+          // Use the questions extracted from the latest attempt
+          questions: latestAttemptQuestions,
           // Ensure submission_id is set
           submission_id: responseSubmissionId,
         };
