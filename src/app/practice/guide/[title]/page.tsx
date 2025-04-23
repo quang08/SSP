@@ -30,6 +30,7 @@ import { Button } from '@/components/ui/button';
 import { motion } from 'framer-motion';
 import { CompletedTest, TestResultsResponse } from '@/interfaces/test';
 import { cn } from '@/lib/utils';
+import { MathJax, MathJaxContext } from 'better-react-mathjax';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import ReactMarkdown from 'react-markdown';
@@ -154,105 +155,6 @@ const fetcher = async (url: string) => {
   });
   if (!res.ok) throw new Error('Failed to fetch data');
   return res.json();
-};
-
-const cleanLatexFields = (text: string): string => {
-  // Remove control characters
-  let cleaned = text.replace(/[\x00-\x1F\x7F]/g, '');
-
-  // Escape # when inside \text{...}
-  cleaned = cleaned.replace(/\\text\{([^}]*)\}/g, (match, content) => {
-    const escaped = content.replace(/#/g, '\\#');
-    return `\\text{${escaped}}`;
-  });
-
-  return cleaned;
-};
-
-const isValidLatex = (text: string): boolean => {
-  try {
-    katex.renderToString(text, {
-      throwOnError: false,
-      strict: false,
-    });
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const renderWithKatex = (text: string, displayMode = false): string => {
-  try {
-    return katex.renderToString(text, {
-      displayMode,
-      throwOnError: false,
-      strict: false,
-      trust: true,
-    });
-  } catch (error) {
-    console.error('KaTeX rendering error:', error);
-    return text;
-  }
-};
-
-const renderTextWithLatex = (text: string) => {
-  if (!text) return null;
-
-  const parts = text.split(
-    /(\$\$[\s\S]+?\$\$|\$[^\n]+\$|\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\])/g
-  );
-
-  const hashString = (str: string): string => {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
-      hash = hash & hash;
-    }
-    return hash.toString(36);
-  };
-
-  return parts.map((part, index) => {
-    const key = `${index}-${hashString(part)}`;
-    const trimmed = part.trim();
-
-    if (
-      trimmed.startsWith('$') ||
-      trimmed.startsWith('\\(') ||
-      trimmed.startsWith('\\[')
-    ) {
-      const isDisplay = trimmed.startsWith('$$') || trimmed.startsWith('\\[');
-
-      const latex = cleanLatexFields(
-        trimmed
-          .replace(/^\$\$|\$\$$/g, '')
-          .replace(/^\$|\$$/g, '')
-          .replace(/^\\\(|\\\)$/g, '')
-          .replace(/^\\\[|\\\]$/g, '')
-          .trim()
-      );
-
-      if (isValidLatex(latex)) {
-        return (
-          <span
-            key={key}
-            dangerouslySetInnerHTML={{
-              __html: renderWithKatex(latex, isDisplay),
-            }}
-          />
-        );
-      } else {
-        console.warn('Invalid LaTeX detected:', latex);
-        return (
-          <span key={key} className="text-red-500">
-            Invalid LaTeX: {latex}
-          </span>
-        );
-      }
-    }
-
-    return <span key={key}>{part}</span>;
-  });
 };
 
 const StudyGuidePage: React.FC = () => {
@@ -546,324 +448,466 @@ const StudyGuidePage: React.FC = () => {
     return { statusIcon, statusText, bgColorClass, textColorClass };
   };
 
+  // Update MathJax config with additional macros
+  const mathJaxConfig = {
+    loader: {
+      load: [
+        '[tex]/html',
+        '[tex]/ams',
+        '[tex]/noerrors',
+        '[tex]/noundefined',
+        '[tex]/mhchem',
+        '[tex]/cancel',
+      ],
+    },
+    tex: {
+      packages: {
+        '[+]': ['html', 'ams', 'noerrors', 'noundefined', 'mhchem', 'cancel'],
+      },
+      inlineMath: [
+        ['$', '$'],
+        ['\\(', '\\)'],
+      ],
+      displayMath: [
+        ['$$', '$$'],
+        ['\\[', '\\]'],
+      ],
+      processEscapes: true,
+      processEnvironments: true,
+      processRefs: true,
+      digits: /^(?:[0-9]+(?:\{,\}[0-9]{3})*(?:\.[0-9]*)?|\.[0-9]+)/,
+      tags: 'ams',
+      tagSide: 'right',
+      tagIndent: '0.8em',
+      useLabelIds: true,
+      maxMacros: 1000,
+      maxBuffer: 5 * 1024,
+      macros: {
+        // Number sets
+        '\\R': '\\mathbb{R}',
+        '\\N': '\\mathbb{N}',
+        '\\Z': '\\mathbb{Z}',
+        '\\Q': '\\mathbb{Q}',
+        '\\C': '\\mathbb{C}',
+
+        // Common operators and functions
+        '\\Var': '\\operatorname{Var}',
+        '\\Bias': '\\operatorname{Bias}',
+        '\\EPE': '\\operatorname{EPE}',
+        '\\RSS': '\\operatorname{RSS}',
+        '\\MSE': '\\operatorname{MSE}',
+        '\\E': '\\mathbb{E}',
+        '\\P': '\\mathbb{P}',
+
+        // Decorators
+        '\\hat': '\\widehat',
+        '\\bar': '\\overline',
+        '\\tilde': '\\widetilde',
+        '\\vec': '\\mathbf',
+        '\\mat': '\\mathbf',
+
+        // Greek letters shortcuts
+        '\\eps': '\\varepsilon',
+        '\\alp': '\\alpha',
+        '\\bet': '\\beta',
+        '\\gam': '\\gamma',
+        '\\del': '\\delta',
+        '\\the': '\\theta',
+        '\\kap': '\\kappa',
+        '\\lam': '\\lambda',
+        '\\sig': '\\sigma',
+        '\\Gam': '\\Gamma',
+        '\\Del': '\\Delta',
+        '\\The': '\\Theta',
+        '\\Lam': '\\Lambda',
+        '\\Sig': '\\Sigma',
+        '\\Ome': '\\Omega',
+
+        // Special operators
+        '\\T': '^{\\intercal}',
+        '\\given': '\\,|\\,',
+        '\\set': '\\{\\,',
+        '\\setend': '\\,\\}',
+        '\\abs': ['\\left|#1\\right|', 1],
+        '\\norm': ['\\left\\|#1\\right\\|', 1],
+        '\\inner': ['\\left\\langle#1\\right\\rangle', 1],
+        '\\ceil': ['\\left\\lceil#1\\right\\rceil', 1],
+        '\\floor': ['\\left\\lfloor#1\\right\\rfloor', 1],
+
+        // Limits and sums
+        '\\lim': '\\lim\\limits',
+        '\\sum': '\\sum\\limits',
+        '\\prod': '\\prod\\limits',
+        '\\int': '\\int\\limits',
+
+        // Additional statistical operators
+        '\\Cov': '\\operatorname{Cov}',
+        '\\Corr': '\\operatorname{Corr}',
+        '\\SE': '\\operatorname{SE}',
+        '\\Prob': '\\operatorname{P}',
+
+        // Additional mathematical operators
+        '\\argmax': '\\operatorname{arg\\,max}',
+        '\\argmin': '\\operatorname{arg\\,min}',
+        '\\trace': '\\operatorname{tr}',
+        '\\diag': '\\operatorname{diag}',
+
+        // Matrix notation
+        '\\bm': ['\\boldsymbol{#1}', 1],
+        '\\matrix': ['\\begin{matrix}#1\\end{matrix}', 1],
+        '\\pmatrix': ['\\begin{pmatrix}#1\\end{pmatrix}', 1],
+        '\\bmatrix': ['\\begin{bmatrix}#1\\end{bmatrix}', 1],
+
+        // Additional decorators
+        '\\underbar': ['\\underline{#1}', 1],
+        '\\overbar': ['\\overline{#1}', 1],
+
+        // Probability and statistics
+        '\\iid': '\\stackrel{\\text{iid}}{\\sim}',
+        '\\indep': '\\perp\\!\\!\\!\\perp',
+
+        // Calculus
+        '\\dd': '\\,\\mathrm{d}',
+        '\\partial': '\\partial',
+        '\\grad': '\\nabla',
+
+        // Sets and logic
+        '\\setminus': '\\backslash',
+        '\\implies': '\\Rightarrow',
+        '\\iff': '\\Leftrightarrow',
+
+        // Spacing
+        '\\negspace': '\\negmedspace{}',
+        '\\thinspace': '\\thinspace{}',
+        '\\medspace': '\\medspace{}',
+        '\\thickspace': '\\thickspace{}',
+        '\\quad': '\\quad{}',
+        '\\qquad': '\\qquad{}',
+      },
+    },
+    svg: {
+      fontCache: 'global',
+      scale: 1,
+      minScale: 0.5,
+      matchFontHeight: true,
+      mtextInheritFont: true,
+    },
+    options: {
+      enableMenu: false,
+      menuOptions: {
+        settings: {
+          zoom: 'Click',
+          zscale: '200%',
+        },
+      },
+      skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+      renderActions: {
+        addMenu: [],
+        checkLoading: [],
+      },
+    },
+  };
+
+  // Helper function to render with KaTeX
+  const renderWithKatex = (
+    text: string,
+    displayMode: boolean = false
+  ): string => {
+    try {
+      return katex.renderToString(text, {
+        displayMode,
+        throwOnError: false,
+        strict: false,
+        trust: true,
+        macros: mathJaxConfig.tex.macros,
+      });
+    } catch (error) {
+      console.error('KaTeX rendering error:', error);
+      return text;
+    }
+  };
+
+  // Helper function to determine if text is simple LaTeX
+  const isSimpleLatex = (text: string): boolean => {
+    // Check if text contains only basic LaTeX commands and symbols
+    const simpleLatexPattern = /^[a-zA-Z0-9\s\+\-\*\/\^\{\}\(\)\[\]\_\$\\]+$/;
+    return simpleLatexPattern.test(text);
+  };
+
+  // Simple string hashing function for generating unique keys
+  const hashString = (str: string): string => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = (hash << 5) - hash + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    return hash.toString(36); // Convert to base-36 for shorter strings
+  };
+
+  // Function to automatically wrap LaTeX expressions with $ delimiters
+  function autoWrapLatexMath(text: string): string {
+    // Step 1: Convert \{ and \} to actual LaTeX commands
+    let processed = text
+      .replace(/\\\{/g, '\\lbrace')
+      .replace(/\\\}/g, '\\rbrace');
+
+    // Step 2: Wrap entire known math block expressions like:
+    // - { x : x^T \hat{\beta} > 0.5 }
+    // - \frac{1}{k}
+    // These patterns contain math symbols or commands
+    const mathBlockPattern =
+      /(?:\\lbrace[^\\]*?\\rbrace|\\frac\s*\{[^{}]*\}\s*\{[^{}]*\}|[a-zA-Z0-9]+[\^_][a-zA-Z0-9{}\\]+|\\[a-zA-Z]+\{[^{}]*\}|\\[a-zA-Z]+)/g;
+
+    processed = processed.replace(mathBlockPattern, (match) => {
+      // Don't wrap if it's already wrapped
+      if (/^\$.*\$/.test(match)) return match;
+      return `$${match}$`;
+    });
+
+    return processed;
+  }
+
+  function wrapUnwrappedLatex(text: string): string {
+    const MATH_BLOCK_PATTERN =
+      /(?<!\$)((\\(sum|frac|hat|mathcal|mathbb|beta|alpha|theta|lambda|mu|pi|phi|infty|[a-zA-Z]+)|[a-zA-Z]+\([^)]*\)|[a-zA-Z0-9]+[\^_][a-zA-Z0-9{}\\]+)[^$.]*)/g;
+
+    const parts = text.split(/(\$.*?\$)/g); // keep already wrapped blocks intact
+
+    return parts
+      .map((part) => {
+        if (/^\$.*\$$/.test(part)) return part;
+
+        return part.replace(MATH_BLOCK_PATTERN, (match) => {
+          // Avoid wrapping if it's just plain variables or punctuation
+          if (/^[a-zA-Z0-9\s.,;:!?]+$/.test(match)) return match;
+          return `$${match.trim()}$`;
+        });
+      })
+      .join('');
+  }
+
+  function sanitizeLatexMath(text: string): string {
+    return text.replace(/\$(.+?)\$/g, (_, math) => {
+      return `$${math.replace(/\\\\/g, '\\')}$`;
+    });
+  }
+
+  const renderTextWithLatex = (text: string) => {
+    const wrapped = wrapUnwrappedLatex(text);
+    const sanitized = sanitizeLatexMath(wrapped);
+    const parts = sanitized.split(/(\$.*?\$)/g);
+
+    return (
+      <span>
+        {parts.map((part, i) =>
+          /^\$.*\$$/.test(part.trim()) ? (
+            <MathJax key={i} inline dynamic>
+              {part}
+            </MathJax>
+          ) : (
+            <span key={i}>{part}</span>
+          )
+        )}
+      </span>
+    );
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      <Header />
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="mb-8"
-        >
-          <Link
-            href="/practice"
-            className="inline-flex items-center text-gray-600 hover:text-gray-900 mb-6"
+    <MathJaxContext config={mathJaxConfig}>
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+        <Header />
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="mb-8"
           >
-            <ChevronLeft className="h-4 w-4 mr-1" />
-            Back to Practice
-          </Link>
+            <Link
+              href="/practice"
+              className="inline-flex items-center text-gray-600 hover:text-gray-900 mb-6"
+            >
+              <ChevronLeft className="h-4 w-4 mr-1" />
+              Back to Practice
+            </Link>
 
-          <div className="flex justify-between items-start mb-8">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-                {studyGuide?.title.replace(/_/g, ' ')}
-                {hasAnalytics && (
-                  <span className="ml-2 px-3 py-1 bg-green-100 text-green-700 text-sm rounded-full flex items-center">
-                    <BarChart className="h-4 w-4 mr-1" />
-                    Analytics Available
-                  </span>
-                )}
-              </h1>
-              <p className="mt-2 text-gray-600">Study Guide Content</p>
-            </div>
+            <div className="flex justify-between items-start mb-8">
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
+                  {studyGuide?.title.replace(/_/g, ' ')}
+                  {hasAnalytics && (
+                    <span className="ml-2 px-3 py-1 bg-green-100 text-green-700 text-sm rounded-full flex items-center">
+                      <BarChart className="h-4 w-4 mr-1" />
+                      Analytics Available
+                    </span>
+                  )}
+                </h1>
+                <p className="mt-2 text-gray-600">Study Guide Content</p>
+              </div>
 
-            {studyGuide?.study_guide_id && userId && (
-              <Link
-                href={`/dashboard?guide=${studyGuide.study_guide_id}`}
-                className={
-                  !hasAnalytics ? 'pointer-events-none opacity-50' : ''
-                }
-              >
-                <Button
-                  variant="outline"
-                  className="flex items-center gap-2 border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/5"
-                  disabled={!hasAnalytics}
-                  title={
-                    !hasAnalytics
-                      ? 'Take a quiz first to enable analytics'
-                      : 'View guide analytics'
+              {studyGuide?.study_guide_id && userId && (
+                <Link
+                  href={`/dashboard?guide=${studyGuide.study_guide_id}`}
+                  className={
+                    !hasAnalytics ? 'pointer-events-none opacity-50' : ''
                   }
                 >
-                  <BarChart className="h-4 w-4" />
-                  {hasAnalytics ? 'View Analytics' : 'No Analytics Yet'}
-                </Button>
-              </Link>
-            )}
-          </div>
-        </motion.div>
-
-        {loading ? (
-          <Loading size="lg" text="Loading study guide..." />
-        ) : error ? (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex flex-col items-center justify-center p-8 bg-red-50 rounded-xl border border-red-200 max-w-2xl mx-auto"
-          >
-            <div className="text-center space-y-4">
-              <p className="text-xl font-semibold text-red-600">
-                {getErrorMessage()}
-              </p>
-              <p className="text-gray-600">
-                You can try refreshing the page or going back to the practice
-                section.
-              </p>
-              <div className="flex gap-4 mt-6">
-                <Button
-                  onClick={() => window.location.reload()}
-                  variant="default"
-                  className="bg-red-600 hover:bg-red-700 text-white"
-                >
-                  Try Again
-                </Button>
-                <Link href="/practice">
-                  <Button variant="outline">Return to Practice</Button>
+                  <Button
+                    variant="outline"
+                    className="flex items-center gap-2 border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/5"
+                    disabled={!hasAnalytics}
+                    title={
+                      !hasAnalytics
+                        ? 'Take a quiz first to enable analytics'
+                        : 'View guide analytics'
+                    }
+                  >
+                    <BarChart className="h-4 w-4" />
+                    {hasAnalytics ? 'View Analytics' : 'No Analytics Yet'}
+                  </Button>
                 </Link>
-              </div>
+              )}
             </div>
           </motion.div>
-        ) : (
-          <motion.div
-            variants={container}
-            initial="hidden"
-            animate="show"
-            className="grid md:grid-cols-4 gap-8"
-          >
+
+          {loading ? (
+            <Loading size="lg" text="Loading study guide..." />
+          ) : error ? (
             <motion.div
-              variants={item}
-              className="md:col-span-3 bg-white rounded-xl shadow-lg p-6 border-2 border-gray-300"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex flex-col items-center justify-center p-8 bg-red-50 rounded-xl border border-red-200 max-w-2xl mx-auto"
             >
-              <Accordion
-                type="multiple"
-                defaultValue={['chapter-0']}
-                className="w-full space-y-4"
+              <div className="text-center space-y-4">
+                <p className="text-xl font-semibold text-red-600">
+                  {getErrorMessage()}
+                </p>
+                <p className="text-gray-600">
+                  You can try refreshing the page or going back to the practice
+                  section.
+                </p>
+                <div className="flex gap-4 mt-6">
+                  <Button
+                    onClick={() => window.location.reload()}
+                    variant="default"
+                    className="bg-red-600 hover:bg-red-700 text-white"
+                  >
+                    Try Again
+                  </Button>
+                  <Link href="/practice">
+                    <Button variant="outline">Return to Practice</Button>
+                  </Link>
+                </div>
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div
+              variants={container}
+              initial="hidden"
+              animate="show"
+              className="grid md:grid-cols-4 gap-8"
+            >
+              <motion.div
+                variants={item}
+                className="md:col-span-3 bg-white rounded-xl shadow-lg p-6 border-2 border-gray-300"
               >
-                {processedGuide?.chapters.map(
-                  (chapter: Chapter, chapterIndex: number) => (
-                    <motion.div key={chapterIndex} variants={item}>
-                      <AccordionItem
-                        value={`chapter-${chapterIndex}`}
-                        className="border-2 border-gray-300 rounded-xl shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden data-[state=open]:shadow-md"
-                      >
-                        <AccordionTrigger className="px-6 py-4 hover:no-underline transition-colors flex justify-between items-center w-full">
-                          <div className="flex items-center gap-3">
-                            <div className="p-2 rounded-lg bg-[var(--color-primary)]/10">
-                              <BarChart className="h-5 w-5 text-[var(--color-primary)]" />
+                <Accordion
+                  type="multiple"
+                  defaultValue={['chapter-0']}
+                  className="w-full space-y-4"
+                >
+                  {processedGuide?.chapters.map(
+                    (chapter: Chapter, chapterIndex: number) => (
+                      <motion.div key={chapterIndex} variants={item}>
+                        <AccordionItem
+                          value={`chapter-${chapterIndex}`}
+                          className="border-2 border-gray-300 rounded-xl shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden data-[state=open]:shadow-md"
+                        >
+                          <AccordionTrigger className="px-6 py-4 hover:no-underline transition-colors flex justify-between items-center w-full">
+                            <div className="flex items-center gap-3">
+                              <div className="p-2 rounded-lg bg-[var(--color-primary)]/10">
+                                <BarChart className="h-5 w-5 text-[var(--color-primary)]" />
+                              </div>
+                              <span className="text-left font-semibold text-gray-900">
+                                {chapter.title}
+                              </span>
                             </div>
-                            <span className="text-left font-semibold text-gray-900">
-                              {chapter.title}
-                            </span>
-                          </div>
-                        </AccordionTrigger>
+                          </AccordionTrigger>
 
-                        <AccordionContent className="px-6 pb-6 pt-2">
-                          <div className="space-y-3">
-                            {chapter.sections.map(
-                              (section: Section, sectionIndex: number) => {
-                                // Get section status information
-                                const {
-                                  statusIcon,
-                                  statusText,
-                                  bgColorClass,
-                                  textColorClass,
-                                } = getSectionStatusInfo(section);
+                          <AccordionContent className="px-6 pb-6 pt-2">
+                            <div className="space-y-3">
+                              {chapter.sections.map(
+                                (section: Section, sectionIndex: number) => {
+                                  // Get section status information
+                                  const {
+                                    statusIcon,
+                                    statusText,
+                                    bgColorClass,
+                                    textColorClass,
+                                  } = getSectionStatusInfo(section);
 
-                                return (
-                                  <motion.div
-                                    key={sectionIndex}
-                                    variants={item}
-                                  >
-                                    <AccordionItem
-                                      value={`section-${chapterIndex}-${sectionIndex}`}
-                                      className="border-2 border-gray-300 rounded-lg overflow-hidden hover:border-[var(--color-primary)]/50 transition-all duration-300 data-[state=open]:shadow-md data-[state=open]:border-[var(--color-primary)]/40"
+                                  return (
+                                    <motion.div
+                                      key={sectionIndex}
+                                      variants={item}
                                     >
-                                      <AccordionTrigger className="px-4 py-3 hover:no-underline transition-colors">
-                                        <div className="flex items-center gap-3">
-                                          <div
-                                            className={cn(
-                                              'p-1.5 rounded-lg transition-colors',
-                                              section.is_mastered
-                                                ? 'bg-green-200'
-                                                : section.is_unlocked
-                                                  ? 'bg-[var(--color-primary)]/10'
-                                                  : 'bg-gray-200'
-                                            )}
-                                          >
-                                            {section.is_mastered ? (
-                                              <CheckCircle className="h-4 w-4 text-green-600" />
-                                            ) : !section.is_unlocked ? (
-                                              <Lock className="h-4 w-4 text-gray-500" />
-                                            ) : (
-                                              <PlayCircle className="h-4 w-4 text-[var(--color-primary)]" />
+                                      <AccordionItem
+                                        value={`section-${chapterIndex}-${sectionIndex}`}
+                                        className="border-2 border-gray-300 rounded-lg overflow-hidden hover:border-[var(--color-primary)]/50 transition-all duration-300 data-[state=open]:shadow-md data-[state=open]:border-[var(--color-primary)]/40"
+                                      >
+                                        <AccordionTrigger className="px-4 py-3 hover:no-underline transition-colors">
+                                          <div className="flex items-center gap-3">
+                                            <div
+                                              className={cn(
+                                                'p-1.5 rounded-lg transition-colors',
+                                                section.is_mastered
+                                                  ? 'bg-green-200'
+                                                  : section.is_unlocked
+                                                    ? 'bg-[var(--color-primary)]/10'
+                                                    : 'bg-gray-200'
+                                              )}
+                                            >
+                                              {section.is_mastered ? (
+                                                <CheckCircle className="h-4 w-4 text-green-600" />
+                                              ) : !section.is_unlocked ? (
+                                                <Lock className="h-4 w-4 text-gray-500" />
+                                              ) : (
+                                                <PlayCircle className="h-4 w-4 text-[var(--color-primary)]" />
+                                              )}
+                                            </div>
+                                            <span className="text-left font-medium text-gray-800">
+                                              {section.title}
+                                            </span>
+                                            {/* Add status indicator */}
+                                            {statusIcon && (
+                                              <span
+                                                className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full ${bgColorClass} ${textColorClass}`}
+                                              >
+                                                {statusIcon}
+                                                {statusText}
+                                              </span>
                                             )}
                                           </div>
-                                          <span className="text-left font-medium text-gray-800">
-                                            {section.title}
-                                          </span>
-                                          {/* Add status indicator */}
-                                          {statusIcon && (
-                                            <span
-                                              className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full ${bgColorClass} ${textColorClass}`}
-                                            >
-                                              {statusIcon}
-                                              {statusText}
-                                            </span>
-                                          )}
-                                        </div>
-                                      </AccordionTrigger>
+                                        </AccordionTrigger>
 
-                                      <AccordionContent className="px-4 pb-4 pt-1">
-                                        <div className="space-y-2.5">
-                                          {/* Key Concepts */}
-                                          {section.key_concepts && (
-                                            <div className="space-y-2">
-                                              <h4 className="font-medium text-gray-900">
-                                                Key Concepts
-                                              </h4>
-                                              <ul className="list-disc list-inside space-y-2 text-gray-700">
-                                                {section.key_concepts.map(
-                                                  (
-                                                    concept: string,
-                                                    index: number
-                                                  ) => (
-                                                    <li key={index}>
-                                                      {renderTextWithLatex(
-                                                        concept
-                                                      )}
-                                                    </li>
-                                                  )
-                                                )}
-                                              </ul>
-                                            </div>
-                                          )}
-
-                                          {/* Source Information */}
-                                          {section.source_pages &&
-                                            section.source_pages.length > 0 && (
-                                              <div className="text-sm text-gray-500">
-                                                Source Page
-                                                {section.source_pages.length > 1
-                                                  ? 's'
-                                                  : ''}
-                                                :{' '}
-                                                {section.source_pages.join(
-                                                  ', '
-                                                )}
-                                              </div>
-                                            )}
-
-                                          {/* Source Texts */}
-                                          {section.source_texts &&
-                                            section.source_texts.length > 0 && (
+                                        <AccordionContent className="px-4 pb-4 pt-1">
+                                          <div className="space-y-2.5">
+                                            {/* Key Concepts */}
+                                            {section.key_concepts && (
                                               <div className="space-y-2">
-                                                {section.source_texts.map(
-                                                  (
-                                                    text: string,
-                                                    index: number
-                                                  ) => (
-                                                    <div
-                                                      key={index}
-                                                      className="p-3 bg-gray-50 rounded-lg border border-gray-200 overflow-x-auto"
-                                                    >
-                                                      <div className="text-sm text-gray-600 italic leading-relaxed break-words whitespace-pre-wrap max-w-full">
-                                                        &ldquo;
-                                                        {renderTextWithLatex(
-                                                          text
-                                                        )}
-                                                        &rdquo;
-                                                      </div>
-                                                    </div>
-                                                  )
-                                                )}
-                                              </div>
-                                            )}
-
-                                          {/* Display prerequisites if any */}
-                                          {section.prerequisite_sections &&
-                                            section.prerequisite_sections
-                                              .length > 0 && (
-                                              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm">
-                                                <p className="font-medium text-gray-700 mb-2">
-                                                  Prerequisites:
-                                                </p>
-                                                <ul className="list-disc list-inside space-y-1 text-gray-600">
-                                                  {section.prerequisite_sections.map(
+                                                <h4 className="font-medium text-gray-900">
+                                                  Key Concepts
+                                                </h4>
+                                                <ul className="list-disc list-inside space-y-2 text-gray-700">
+                                                  {section.key_concepts.map(
                                                     (
-                                                      prereq: string,
+                                                      concept: string,
                                                       index: number
                                                     ) => (
-                                                      <li
-                                                        key={index}
-                                                        className="flex items-center gap-2"
-                                                      >
-                                                        <span>{prereq}</span>
-                                                        {sectionMasteryStatus[
-                                                          prereq
-                                                        ] && (
-                                                          <span className="flex items-center gap-1">
-                                                            {sectionMasteryStatus[
-                                                              prereq
-                                                            ].isMastered ? (
-                                                              <CheckCircle className="h-3 w-3 text-green-500" />
-                                                            ) : sectionMasteryStatus[
-                                                                prereq
-                                                              ]
-                                                                .review_recommended ? (
-                                                              <AlertTriangle className="h-3 w-3 text-yellow-500" />
-                                                            ) : !sectionMasteryStatus[
-                                                                prereq
-                                                              ].isUnlocked ? (
-                                                              <Lock className="h-3 w-3 text-gray-500" />
-                                                            ) : (
-                                                              <Circle className="h-3 w-3 text-gray-400" />
-                                                            )}
-                                                            <span
-                                                              className={`text-xs px-1.5 py-0.5 rounded-full ${
-                                                                sectionMasteryStatus[
-                                                                  prereq
-                                                                ].isMastered
-                                                                  ? 'bg-green-100 text-green-700'
-                                                                  : sectionMasteryStatus[
-                                                                        prereq
-                                                                      ]
-                                                                        .review_recommended
-                                                                    ? 'bg-yellow-100 text-yellow-700'
-                                                                    : 'bg-gray-100 text-gray-700'
-                                                              }`}
-                                                            >
-                                                              {sectionMasteryStatus[
-                                                                prereq
-                                                              ].isMastered
-                                                                ? 'Mastered'
-                                                                : sectionMasteryStatus[
-                                                                      prereq
-                                                                    ]
-                                                                      .review_recommended
-                                                                  ? 'Review Recommended'
-                                                                  : sectionMasteryStatus[
-                                                                        prereq
-                                                                      ]
-                                                                        .attempts_used &&
-                                                                      sectionMasteryStatus[
-                                                                        prereq
-                                                                      ]
-                                                                        .attempts_used >
-                                                                        0
-                                                                    ? 'Attempted'
-                                                                    : 'Not Mastered'}
-                                                            </span>
-                                                          </span>
+                                                      <li key={index}>
+                                                        {renderTextWithLatex(
+                                                          concept
                                                         )}
                                                       </li>
                                                     )
@@ -872,246 +916,382 @@ const StudyGuidePage: React.FC = () => {
                                               </div>
                                             )}
 
-                                          {/* Quiz Button or Generate Tests Button */}
-                                          {practiceTests[section.title] ? (
-                                            <div className="pt-4">
-                                              <Button
-                                                onClick={() =>
-                                                  handleQuizClick(
-                                                    practiceTests[
+                                            {/* Source Information */}
+                                            {section.source_pages &&
+                                              section.source_pages.length >
+                                                0 && (
+                                                <div className="text-sm text-gray-500">
+                                                  Source Page
+                                                  {section.source_pages.length >
+                                                  1
+                                                    ? 's'
+                                                    : ''}
+                                                  :{' '}
+                                                  {section.source_pages.join(
+                                                    ', '
+                                                  )}
+                                                </div>
+                                              )}
+
+                                            {/* Source Texts */}
+                                            {section.source_texts &&
+                                              section.source_texts.length >
+                                                0 && (
+                                                <div className="space-y-2">
+                                                  {section.source_texts.map(
+                                                    (
+                                                      text: string,
+                                                      index: number
+                                                    ) => (
+                                                      <div
+                                                        key={index}
+                                                        className="p-3 bg-gray-50 rounded-lg border border-gray-200 overflow-x-auto"
+                                                      >
+                                                        <div className="text-sm text-gray-600 italic leading-relaxed break-words whitespace-pre-wrap max-w-full">
+                                                          &ldquo;
+                                                          {renderTextWithLatex(
+                                                            text
+                                                          )}
+                                                          &rdquo;
+                                                        </div>
+                                                      </div>
+                                                    )
+                                                  )}
+                                                </div>
+                                              )}
+
+                                            {/* Display prerequisites if any */}
+                                            {section.prerequisite_sections &&
+                                              section.prerequisite_sections
+                                                .length > 0 && (
+                                                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm">
+                                                  <p className="font-medium text-gray-700 mb-2">
+                                                    Prerequisites:
+                                                  </p>
+                                                  <ul className="list-disc list-inside space-y-1 text-gray-600">
+                                                    {section.prerequisite_sections.map(
+                                                      (
+                                                        prereq: string,
+                                                        index: number
+                                                      ) => (
+                                                        <li
+                                                          key={index}
+                                                          className="flex items-center gap-2"
+                                                        >
+                                                          <span>{prereq}</span>
+                                                          {sectionMasteryStatus[
+                                                            prereq
+                                                          ] && (
+                                                            <span className="flex items-center gap-1">
+                                                              {sectionMasteryStatus[
+                                                                prereq
+                                                              ].isMastered ? (
+                                                                <CheckCircle className="h-3 w-3 text-green-500" />
+                                                              ) : sectionMasteryStatus[
+                                                                  prereq
+                                                                ]
+                                                                  .review_recommended ? (
+                                                                <AlertTriangle className="h-3 w-3 text-yellow-500" />
+                                                              ) : !sectionMasteryStatus[
+                                                                  prereq
+                                                                ].isUnlocked ? (
+                                                                <Lock className="h-3 w-3 text-gray-500" />
+                                                              ) : (
+                                                                <Circle className="h-3 w-3 text-gray-400" />
+                                                              )}
+                                                              <span
+                                                                className={`text-xs px-1.5 py-0.5 rounded-full ${
+                                                                  sectionMasteryStatus[
+                                                                    prereq
+                                                                  ].isMastered
+                                                                    ? 'bg-green-100 text-green-700'
+                                                                    : sectionMasteryStatus[
+                                                                          prereq
+                                                                        ]
+                                                                          .review_recommended
+                                                                      ? 'bg-yellow-100 text-yellow-700'
+                                                                      : 'bg-gray-100 text-gray-700'
+                                                                }`}
+                                                              >
+                                                                {sectionMasteryStatus[
+                                                                  prereq
+                                                                ].isMastered
+                                                                  ? 'Mastered'
+                                                                  : sectionMasteryStatus[
+                                                                        prereq
+                                                                      ]
+                                                                        .review_recommended
+                                                                    ? 'Review Recommended'
+                                                                    : sectionMasteryStatus[
+                                                                          prereq
+                                                                        ]
+                                                                          .attempts_used &&
+                                                                        sectionMasteryStatus[
+                                                                          prereq
+                                                                        ]
+                                                                          .attempts_used >
+                                                                          0
+                                                                      ? 'Attempted'
+                                                                      : 'Not Mastered'}
+                                                              </span>
+                                                            </span>
+                                                          )}
+                                                        </li>
+                                                      )
+                                                    )}
+                                                  </ul>
+                                                </div>
+                                              )}
+
+                                            {/* Quiz Button or Generate Tests Button */}
+                                            {practiceTests[section.title] ? (
+                                              <div className="pt-4">
+                                                <Button
+                                                  onClick={() =>
+                                                    handleQuizClick(
+                                                      practiceTests[
+                                                        section.title
+                                                      ],
                                                       section.title
-                                                    ],
-                                                    section.title
-                                                  )
-                                                }
-                                                className={cn(
-                                                  'w-full transition-all duration-300',
-                                                  section.is_unlocked
-                                                    ? 'bg-gradient-to-r from-[var(--color-primary)] to-purple-400 text-white hover:from-[var(--color-primary)]/90 hover:to-purple-500/90'
-                                                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                                )}
-                                                disabled={!section.is_unlocked}
-                                                title={
-                                                  !section.is_unlocked
-                                                    ? section.prerequisite_sections &&
-                                                      section
-                                                        .prerequisite_sections
-                                                        .length > 0
-                                                      ? `Prerequisites: ${section.prerequisite_sections.join(', ')}`
-                                                      : 'You need to master the prerequisites first'
-                                                    : ''
-                                                }
-                                              >
-                                                {!section.is_unlocked ? (
-                                                  <>
-                                                    <Lock className="h-4 w-4 mr-2" />
-                                                    Locked (Prerequisites
-                                                    Required)
-                                                  </>
-                                                ) : completedTests.has(
-                                                    practiceTests[section.title]
-                                                  ) ? (
-                                                  'View Results'
-                                                ) : section.is_mastered ? (
-                                                  'Mastered'
-                                                ) : section.review_recommended ? (
-                                                  'Review Recommended'
-                                                ) : (
-                                                  'Start Quiz'
-                                                )}
-                                              </Button>
-                                            </div>
-                                          ) : (
-                                            <div className="pt-4">
-                                              <Button
-                                                onClick={generatePracticeTests}
-                                                disabled={generatingTests}
-                                                className="w-full bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-dark)]"
-                                              >
-                                                {generatingTests ? (
-                                                  <div className="flex items-center gap-2">
-                                                    <span className="animate-spin h-4 w-4 border-2 border-white border-opacity-50 border-t-white rounded-full"></span>
-                                                    <span>
-                                                      Generating Tests...
-                                                    </span>
-                                                  </div>
-                                                ) : (
-                                                  'Generate Practice Tests'
-                                                )}
-                                              </Button>
-                                            </div>
-                                          )}
-                                        </div>
-                                      </AccordionContent>
-                                    </AccordionItem>
-                                  </motion.div>
-                                );
-                              }
-                            )}
-                          </div>
-                        </AccordionContent>
-                      </AccordionItem>
-                    </motion.div>
-                  )
+                                                    )
+                                                  }
+                                                  className={cn(
+                                                    'w-full transition-all duration-300',
+                                                    section.is_unlocked
+                                                      ? 'bg-gradient-to-r from-[var(--color-primary)] to-purple-400 text-white hover:from-[var(--color-primary)]/90 hover:to-purple-500/90'
+                                                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                                  )}
+                                                  disabled={
+                                                    !section.is_unlocked
+                                                  }
+                                                  title={
+                                                    !section.is_unlocked
+                                                      ? section.prerequisite_sections &&
+                                                        section
+                                                          .prerequisite_sections
+                                                          .length > 0
+                                                        ? `Prerequisites: ${section.prerequisite_sections.join(', ')}`
+                                                        : 'You need to master the prerequisites first'
+                                                      : ''
+                                                  }
+                                                >
+                                                  {!section.is_unlocked ? (
+                                                    <>
+                                                      <Lock className="h-4 w-4 mr-2" />
+                                                      Locked (Prerequisites
+                                                      Required)
+                                                    </>
+                                                  ) : completedTests.has(
+                                                      practiceTests[
+                                                        section.title
+                                                      ]
+                                                    ) ? (
+                                                    'View Results'
+                                                  ) : section.is_mastered ? (
+                                                    'Mastered'
+                                                  ) : section.review_recommended ? (
+                                                    'Review Recommended'
+                                                  ) : (
+                                                    'Start Quiz'
+                                                  )}
+                                                </Button>
+                                              </div>
+                                            ) : (
+                                              <div className="pt-4">
+                                                <Button
+                                                  onClick={
+                                                    generatePracticeTests
+                                                  }
+                                                  disabled={generatingTests}
+                                                  className="w-full bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-dark)]"
+                                                >
+                                                  {generatingTests ? (
+                                                    <div className="flex items-center gap-2">
+                                                      <span className="animate-spin h-4 w-4 border-2 border-white border-opacity-50 border-t-white rounded-full"></span>
+                                                      <span>
+                                                        Generating Tests...
+                                                      </span>
+                                                    </div>
+                                                  ) : (
+                                                    'Generate Practice Tests'
+                                                  )}
+                                                </Button>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </AccordionContent>
+                                      </AccordionItem>
+                                    </motion.div>
+                                  );
+                                }
+                              )}
+                            </div>
+                          </AccordionContent>
+                        </AccordionItem>
+                      </motion.div>
+                    )
+                  )}
+                </Accordion>
+
+                {/* Global generating tests indicator */}
+                {generatingTests && (
+                  <div className="mt-6 p-4 bg-[var(--color-primary)]/5 rounded-lg text-center">
+                    <Loading size="sm" text="Generating practice tests..." />
+                  </div>
                 )}
-              </Accordion>
+              </motion.div>
 
-              {/* Global generating tests indicator */}
-              {generatingTests && (
-                <div className="mt-6 p-4 bg-[var(--color-primary)]/5 rounded-lg text-center">
-                  <Loading size="sm" text="Generating practice tests..." />
-                </div>
-              )}
-            </motion.div>
+              <motion.div variants={item} className="space-y-6">
+                <div className="bg-white rounded-xl shadow-lg p-6">
+                  <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <BarChart className="h-5 w-5 text-[var(--color-primary)]" />
+                    Guide Info
+                  </h3>
+                  <div className="space-y-4">
+                    {/* Conditionally render Google Drive Link based on data */}
+                    {processedGuide?.gdrive_folder_url && (
+                      <div>
+                        <p className="text-sm text-gray-600 mb-1">
+                          Course Materials
+                        </p>
+                        <Link
+                          href={processedGuide.gdrive_folder_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full text-sm flex items-center justify-center gap-2 border-blue-500 text-blue-600 hover:bg-blue-50"
+                            title="View associated course materials in Google Drive"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                            View Materials in Drive
+                          </Button>
+                        </Link>
+                      </div>
+                    )}
 
-            <motion.div variants={item} className="space-y-6">
-              <div className="bg-white rounded-xl shadow-lg p-6">
-                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                  <BarChart className="h-5 w-5 text-[var(--color-primary)]" />
-                  Guide Info
-                </h3>
-                <div className="space-y-4">
-                  {/* Conditionally render Google Drive Link based on data */}
-                  {processedGuide?.gdrive_folder_url && (
+                    <div>
+                      <p className="text-sm text-gray-600 mb-1">Chapters</p>
+                      <p className="font-medium">
+                        {studyGuide?.chapters?.length || 0} chapters available
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600 mb-1">Sections</p>
+                      <p className="font-medium">
+                        {studyGuide?.chapters?.reduce(
+                          (acc: number, chapter: Chapter) =>
+                            acc + (chapter.sections?.length || 0),
+                          0
+                        ) || 0}{' '}
+                        sections
+                      </p>
+                    </div>
                     <div>
                       <p className="text-sm text-gray-600 mb-1">
-                        Course Materials
+                        Practice Tests
                       </p>
-                      <Link
-                        href={processedGuide.gdrive_folder_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-full text-sm flex items-center justify-center gap-2 border-blue-500 text-blue-600 hover:bg-blue-50"
-                          title="View associated course materials in Google Drive"
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                          View Materials in Drive
-                        </Button>
-                      </Link>
-                    </div>
-                  )}
-
-                  <div>
-                    <p className="text-sm text-gray-600 mb-1">Chapters</p>
-                    <p className="font-medium">
-                      {studyGuide?.chapters?.length || 0} chapters available
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600 mb-1">Sections</p>
-                    <p className="font-medium">
-                      {studyGuide?.chapters?.reduce(
-                        (acc: number, chapter: Chapter) =>
-                          acc + (chapter.sections?.length || 0),
-                        0
-                      ) || 0}{' '}
-                      sections
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600 mb-1">Practice Tests</p>
-                    <p className="font-medium">
-                      {testsData?.practice_tests?.length || 0} available
-                    </p>
-                  </div>
-                  {testsData?.practice_tests?.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-sm text-gray-600 mb-1">Progress</p>
-                      <div className="flex justify-between">
-                        <p className="font-medium">
-                          {completedTests.size}/
-                          {testsData.practice_tests.length} completed
-                        </p>
-                        <p className="font-medium text-[var(--color-primary)]">
-                          {progress.toFixed(0)}%
-                        </p>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                        <div
-                          className="bg-[var(--color-primary)] h-2 rounded-full transition-all duration-300"
-                          style={{
-                            width: `${progress}%`,
-                          }}
-                        ></div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Analytics info section */}
-                  {hasAnalytics && guideAnalytics && (
-                    <div className="pt-2 mt-3 border-t border-dashed border-gray-200">
-                      <p className="text-sm font-medium text-green-700 mb-3">
-                        Analytics Available
+                      <p className="font-medium">
+                        {testsData?.practice_tests?.length || 0} available
                       </p>
-                      <div className="space-y-3">
-                        <div>
-                          <p className="text-sm text-gray-600 mb-1">
-                            Tests Taken
-                          </p>
+                    </div>
+                    {testsData?.practice_tests?.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-sm text-gray-600 mb-1">Progress</p>
+                        <div className="flex justify-between">
                           <p className="font-medium">
-                            {guideAnalytics.total_tests}
+                            {completedTests.size}/
+                            {testsData.practice_tests.length} completed
+                          </p>
+                          <p className="font-medium text-[var(--color-primary)]">
+                            {progress.toFixed(0)}%
                           </p>
                         </div>
-
-                        {guideAnalytics.average_accuracy !== undefined && (
-                          <div>
-                            <p className="text-sm text-gray-600 mb-1">
-                              Average Accuracy
-                            </p>
-                            <p className="font-medium">
-                              {guideAnalytics.average_accuracy.toFixed(0)}%
-                            </p>
-                          </div>
-                        )}
-
-                        {guideAnalytics.average_score !== undefined && (
-                          <div>
-                            <p className="text-sm text-gray-600 mb-1">
-                              Average Score
-                            </p>
-                            <p className="font-medium">
-                              {guideAnalytics.average_score.toFixed(1)} points
-                            </p>
-                          </div>
-                        )}
-
-                        <div className="mt-3">
-                          <Link
-                            href={`/dashboard?guide=${studyGuide?.study_guide_id}`}
-                          >
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="w-full text-xs flex items-center gap-1 bg-[var(--color-primary)]/5 border-[var(--color-primary)]/20 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10"
-                            >
-                              <BarChart className="h-3 w-3" />
-                              View Detailed Analytics
-                            </Button>
-                          </Link>
+                        <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                          <div
+                            className="bg-[var(--color-primary)] h-2 rounded-full transition-all duration-300"
+                            style={{
+                              width: `${progress}%`,
+                            }}
+                          ></div>
                         </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {!hasAnalytics && (
-                    <div className="pt-2 mt-3 border-t border-dashed border-gray-200">
-                      <p className="text-sm text-gray-600 mb-2">Analytics</p>
-                      <p className="text-sm text-amber-700">
-                        Take a quiz to generate analytics
-                      </p>
-                    </div>
-                  )}
+                    {/* Analytics info section */}
+                    {hasAnalytics && guideAnalytics && (
+                      <div className="pt-2 mt-3 border-t border-dashed border-gray-200">
+                        <p className="text-sm font-medium text-green-700 mb-3">
+                          Analytics Available
+                        </p>
+                        <div className="space-y-3">
+                          <div>
+                            <p className="text-sm text-gray-600 mb-1">
+                              Tests Taken
+                            </p>
+                            <p className="font-medium">
+                              {guideAnalytics.total_tests}
+                            </p>
+                          </div>
+
+                          {guideAnalytics.average_accuracy !== undefined && (
+                            <div>
+                              <p className="text-sm text-gray-600 mb-1">
+                                Average Accuracy
+                              </p>
+                              <p className="font-medium">
+                                {guideAnalytics.average_accuracy.toFixed(0)}%
+                              </p>
+                            </div>
+                          )}
+
+                          {guideAnalytics.average_score !== undefined && (
+                            <div>
+                              <p className="text-sm text-gray-600 mb-1">
+                                Average Score
+                              </p>
+                              <p className="font-medium">
+                                {guideAnalytics.average_score.toFixed(1)} points
+                              </p>
+                            </div>
+                          )}
+
+                          <div className="mt-3">
+                            <Link
+                              href={`/dashboard?guide=${studyGuide?.study_guide_id}`}
+                            >
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-full text-xs flex items-center gap-1 bg-[var(--color-primary)]/5 border-[var(--color-primary)]/20 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10"
+                              >
+                                <BarChart className="h-3 w-3" />
+                                View Detailed Analytics
+                              </Button>
+                            </Link>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {!hasAnalytics && (
+                      <div className="pt-2 mt-3 border-t border-dashed border-gray-200">
+                        <p className="text-sm text-gray-600 mb-2">Analytics</p>
+                        <p className="text-sm text-amber-700">
+                          Take a quiz to generate analytics
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
+              </motion.div>
             </motion.div>
-          </motion.div>
-        )}
+          )}
+        </div>
       </div>
-    </div>
+    </MathJaxContext>
   );
 };
 

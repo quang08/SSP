@@ -29,22 +29,6 @@ interface QuestionCardProps {
   onUpdateConfidence?: (questionId: string, confidenceLevel: number) => void;
 }
 
-// --- ADD NEW LATEX HELPERS --- START
-const cleanLatexFields = (text: string): string => {
-  return text
-    .replace(/[\x00-\x1F\x7F]/g, '') // Strip control characters
-    .replace(/\\/g, '\\'); // Normalize escaped backslashes
-};
-
-const isValidLatex = (text: string): boolean => {
-  try {
-    katex.renderToString(text, { throwOnError: true });
-    return true;
-  } catch {
-    return false;
-  }
-};
-
 // Helper function to render with KaTeX
 const renderWithKatex = (
   text: string,
@@ -71,94 +55,93 @@ const isSimpleLatex = (text: string): boolean => {
 };
 
 // Helper function to render text with LaTeX
-export const renderTextWithLatex = (text: string) => {
+const renderTextWithLatex = (text: string) => {
   if (!text) return null;
 
-  // --- Step 1: Normalize double-escaped characters ---
-  let processedText = text
-    .replace(/\\\\\(/g, '\\(')
-    .replace(/\\\\\)/g, '\\)')
-    .replace(/\\\\\[/g, '\\[')
-    .replace(/\\\\\]/g, '\\]')
-    .replace(/\\\\/g, '\\');
+  // First, unescape all double backslashes
+  let processedText = text.replace(/\\\\/g, '\\');
 
-  // --- Step 2: Normalize some LaTeX commands ---
+  // Handle special LaTeX commands and symbols
   processedText = processedText
+    // Handle \mathbb{R} notation
     .replace(/\\mathbb\{([^}]+)\}/g, (_, p1) => `\\mathbb{${p1}}`)
+    // Handle subscripts and superscripts with multiple characters
     .replace(/_{([^}]+)}/g, '_{$1}')
     .replace(/\^{([^}]+)}/g, '^{$1}')
+    // Handle special spacing around operators
     .replace(/\\sum(?![a-zA-Z])/g, '\\sum\\limits')
     .replace(/\\int(?![a-zA-Z])/g, '\\int\\limits')
     .replace(/\\prod(?![a-zA-Z])/g, '\\prod\\limits')
-    .replace(/\\mid/g, '|')
+    // Handle spacing around vertical bars and other delimiters
+    .replace(/\|/g, '\\,|\\,')
+    .replace(/\\mid/g, '\\,|\\,')
+    // Handle matrix transpose
     .replace(/\\T(?![a-zA-Z])/g, '^{\\intercal}')
+    // Handle common statistical notation
     .replace(/\\Var/g, '\\operatorname{Var}')
     .replace(/\\Bias/g, '\\operatorname{Bias}')
     .replace(/\\MSE/g, '\\operatorname{MSE}')
     .replace(/\\EPE/g, '\\operatorname{EPE}')
-    .replace(/\\{/g, '{')
-    .replace(/\\}/g, '}');
+    // Handle escaped curly braces
+    .replace(/\\\{/g, '{')
+    .replace(/\\\}/g, '}')
+    .replace(/\\left\s*{/g, '\\left\\{')
+    .replace(/\\right\s*}/g, '\\right\\}');
 
-  // --- Step 3: Split by math delimiters while preserving them ---
+  // Split text by existing LaTeX delimiters while preserving the delimiters
   const parts = processedText.split(
-    /(\$\$[\s\S]+?\$\$|\$[^\n]+\$|\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\])/g
+    /(\$\$[\s\S]*?\$\$|\$[^$\n]*?\$|\\\([^)]*?\\\)|\\\[[\s\S]*?\\\])/g
   );
 
-  // --- Step 4: Hash function for keys ---
+  // Generate a unique key for each part
   const hashString = (str: string): string => {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
-      hash = (hash << 5) - hash + str.charCodeAt(i);
-      hash |= 0;
+      const char = str.charCodeAt(i);
+      hash = (hash << 5) - hash + char;
+      hash = hash & hash; // Convert to 32-bit integer
     }
-    return hash.toString(36);
+    return hash.toString(36); // Convert to base-36 for shorter strings
   };
 
-  // --- Step 5: Render each part ---
   return parts.map((part, index) => {
+    // Generate a more unique key using content hash
     const key = `${index}-${hashString(part)}`;
-    const trimmed = part.trim();
 
-    const isLatex = /^(\$\$.*\$\$|\$.*\$|\\\(.*\\\)|\\\[.*\\\])$/.test(trimmed);
+    if (
+      part.startsWith('$') ||
+      part.startsWith('\\(') ||
+      part.startsWith('\\[')
+    ) {
+      let latex = part
+        .replace(/^\$\$|\$\$$|^\$|\$$|^\\\(|\\\)$|^\\\[|\\\]$/g, '')
+        .trim();
+      const isDisplay = part.startsWith('$$') || part.startsWith('\\[');
 
-    if (isLatex) {
-      // Remove only the outermost delimiters
-      let latex = trimmed;
-
-      if (latex.startsWith('$$') && latex.endsWith('$$')) {
-        latex = latex.slice(2, -2);
-      } else if (latex.startsWith('$') && latex.endsWith('$')) {
-        latex = latex.slice(1, -1);
-      } else if (latex.startsWith('\\(') && latex.endsWith('\\)')) {
-        latex = latex.slice(2, -2);
-      } else if (latex.startsWith('\\[') && latex.endsWith('\\]')) {
-        latex = latex.slice(2, -2);
-      }
-
-      try {
+      if (isSimpleLatex(latex)) {
         return (
           <span
             key={key}
             dangerouslySetInnerHTML={{
-              __html: katex.renderToString(latex, {
-                displayMode:
-                  trimmed.startsWith('$$') || trimmed.startsWith('\\['),
-                throwOnError: false,
-                trust: true,
-              }),
+              __html: renderWithKatex(latex, isDisplay),
             }}
           />
         );
-      } catch (e) {
-        console.error('KaTeX render error:', e, '\nLatex:', latex);
-        return <span key={key}>{part}</span>;
       }
+
+      return (
+        <MathJax key={key} inline={!isDisplay} dynamic={true}>
+          {isDisplay ? `$$${latex}$$` : `$${latex}$`}
+        </MathJax>
+      );
     }
 
-    return <span key={key}>{part}</span>;
+    // Only here you can escape # if needed, e.g. for non-LaTeX text
+    const cleaned = part.replace(/#/g, '');
+
+    return <span key={key}>{cleaned}</span>;
   });
 };
-// --- ADD NEW LATEX HELPERS --- END
 
 const QuestionCard = ({
   questionNumber,
