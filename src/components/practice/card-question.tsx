@@ -113,7 +113,7 @@ const renderTextWithLatex = (text: string) => {
       part.startsWith('\\(') ||
       part.startsWith('\\[')
     ) {
-      let latex = part
+      const latex = part
         .replace(/^\$\$|\$\$$|^\$|\$$|^\\\(|\\\)$|^\\\[|\\\]$/g, '')
         .trim();
       const isDisplay = part.startsWith('$$') || part.startsWith('\\[');

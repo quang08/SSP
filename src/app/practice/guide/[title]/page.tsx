@@ -669,6 +669,8 @@ const StudyGuidePage: React.FC = () => {
   }
 
   function wrapUnwrappedLatex(text: string): string {
+    if (/<mjx-(container|math|c|mi|mo|mtext|texatom)/.test(text)) return text;
+
     const MATH_BLOCK_PATTERN =
       /(?<!\$)((\\(sum|frac|hat|mathcal|mathbb|beta|alpha|theta|lambda|mu|pi|phi|infty|[a-zA-Z]+)|[a-zA-Z]+\([^)]*\)|[a-zA-Z0-9]+[\^_][a-zA-Z0-9{}\\]+)[^$.]*)/g;
 
@@ -677,9 +679,7 @@ const StudyGuidePage: React.FC = () => {
     return parts
       .map((part) => {
         if (/^\$.*\$$/.test(part)) return part;
-
         return part.replace(MATH_BLOCK_PATTERN, (match) => {
-          // Avoid wrapping if it's just plain variables or punctuation
           if (/^[a-zA-Z0-9\s.,;:!?]+$/.test(match)) return match;
           return `$${match.trim()}$`;
         });
@@ -687,15 +687,19 @@ const StudyGuidePage: React.FC = () => {
       .join('');
   }
 
+
   function sanitizeLatexMath(text: string): string {
     return text.replace(/\$(.+?)\$/g, (_, math) => {
-      return `$${math.replace(/\\\\/g, '\\')}$`;
+      const escaped = math.replace(/\\\\/g, '\\').replace(/#/g, '\\#'); // escape hash symbol
+      return `$${escaped}$`;
     });
   }
 
+  const containsMathJaxHTML = (text: string) => /<mjx-/.test(text);
+
   const renderTextWithLatex = (text: string) => {
-    const wrapped = wrapUnwrappedLatex(text);
-    const sanitized = sanitizeLatexMath(wrapped);
+    const content = containsMathJaxHTML(text) ? text : wrapUnwrappedLatex(text);
+    const sanitized = sanitizeLatexMath(content);
     const parts = sanitized.split(/(\$.*?\$)/g);
 
     return (
