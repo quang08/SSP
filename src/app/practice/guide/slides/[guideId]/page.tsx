@@ -69,6 +69,7 @@ interface Topic {
   source_pages?: number[];
   source_texts?: string[];
   topic_prerequisites?: string[];
+  key_points?: (string | Concept)[];
 }
 
 // Add new interfaces for the topic and test statuses
@@ -507,6 +508,22 @@ const SlidesGuidePage: React.FC = () => {
           <p className="text-[var(--color-text-secondary)]">
             {topic.explanation}
           </p>
+        )}
+        {topic.key_points && topic.key_points.length > 0 && (
+          <div className="mt-3">
+            <h5 className="text-sm font-semibold text-gray-800 mb-2">
+              Key Points:
+            </h5>
+            <ul className="list-disc list-inside space-y-1 text-sm text-gray-700">
+              {topic.key_points.map((point, index) => (
+                <li key={index}>
+                  {typeof point === 'string'
+                    ? point
+                    : point.text || point.concept || ''}
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
         {topic.source_pages && topic.source_pages.length > 0 && (
           <div className="text-sm text-[var(--color-text-muted)]">
